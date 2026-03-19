@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1.7
+ARG EDITION=community
+ARG OSS_ROOT=
+ARG NODE_IMAGE=node:22-bullseye
+
+FROM ${NODE_IMAGE} AS builder
+ARG EDITION
+ENV PNPM_HOME=/root/.local/share/pnpm
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+
+WORKDIR /workspace
+
+# Workspace manifests first for better layer caching (from monorepo root)
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+
+# Copy only the bits needed for community build
+COPY ./${OSS_ROOT} ./${OSS_ROOT}
+
+RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm build:${EDITION}
+RUN pnpm --filter @vluna/app-${EDITION} deploy --prod /opt/vluna
+
+FROM node:22-slim AS runtime
+ARG EDITION
+ENV NODE_ENV=production
+WORKDIR /app
+
+ENV VLUNA_EDITION=${EDITION}
+
+COPY --from=builder /opt/vluna/ ./
+
+EXPOSE 3002
+CMD ["sh", "-c", "node dist/src/main.js"]

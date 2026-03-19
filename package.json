@@ -1,0 +1,28 @@
+{
+  "name": "vluna-oss-workspace",
+  "version": "0.0.0",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "core:build": "pnpm --filter @vluna/vluna-core build && pnpm --filter @vluna/vluna-platform build",
+    "core:lint": "pnpm --filter @vluna/vluna-core lint",
+    "core:typecheck": "pnpm --filter @vluna/vluna-core typecheck",
+    "core:typecheck:tests": "pnpm --filter @vluna/vluna-core typecheck:tests",
+    "core:test:community": "pnpm --filter @vluna/vluna-core test:community",
+    "core:test:enterprise": "pnpm --filter @vluna/vluna-core test:enterprise",
+    "build:core": "pnpm --filter @vluna/vluna-core build && pnpm --filter @vluna/vluna-platform build",
+    "build:community": "pnpm build:core && pnpm --filter @vluna/app-community build",
+    "community:setup": "pnpm --filter @vluna/vluna-core db:setup",
+    "community:dev": "pnpm --filter @vluna/vluna-core run build:watch & pnpm --filter @vluna/app-community dev",
+    "community:lint": "pnpm --filter @vluna/vluna-core lint && pnpm --filter @vluna/app-community lint",
+    "community:typecheck": "pnpm --filter @vluna/vluna-platform build && pnpm --filter @vluna/app-community typecheck",
+    "community:vlunactl": "pnpm --filter @vluna/vluna-core vlunactl",
+    "vlunactl": "pnpm --filter @vluna/vluna-core vlunactl",
+    "ci:smoke": "pnpm --filter @vluna/app-community run smoke",
+    "clean:oss": "pnpm -r exec -- rm -rf dist .turbo .next .vitest .tsbuildinfo tsconfig.build.tsbuildinfo && rm -rf apps/**/dist packages/**/dist apps/**/.tsbuildinfo packages/**/.tsbuildinfo"
+  },
+  "devDependencies": {}
+}

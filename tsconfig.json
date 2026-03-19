@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/vluna-core" },
+    { "path": "./packages/vluna-platform" },
+    { "path": "./apps/app-community" }
+  ]
+}

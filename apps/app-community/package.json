@@ -1,0 +1,42 @@
+{
+  "name": "@vluna/app-community",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "NestJS + Fastify service (per SYSTEM_DECISIONS)",
+  "exports": {
+    "./migrations/app": "./migrations/index.js"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "config"
+  ],
+  "scripts": {
+    "predev": "pnpm --filter @vluna/vluna-core build && pnpm --filter @vluna/vluna-platform build",
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -b tsconfig.build.json",
+    "prestart": "pnpm build",
+    "start": "NODE_ENV=production node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm --filter @vluna/vluna-core run lint",
+    "lint:fix": "pnpm --filter @vluna/vluna-core run lint:fix",
+    "test": "pnpm --filter @vluna/vluna-core run test",
+    "migrate": "tsx scripts/migrate.ts",
+    "migrate:status": "tsx scripts/migrate.ts status",
+    "smoke": "pnpm --filter @vluna/vluna-core build && pnpm --filter @vluna/vluna-platform build && pnpm build"
+  },
+  "dependencies": {
+    "@vluna/vluna-core": "workspace:*",
+    "@vluna/vluna-platform": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.1",
+    "@typescript-eslint/parser": "^8.8.1",
+    "eslint": "^9.9.1",
+    "eslint-plugin-import": "^2.29.1",
+    "tsx": "^4.15.7",
+    "typescript": "^5.9.2"
+  }
+}

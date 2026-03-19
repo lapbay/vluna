@@ -1,0 +1,83 @@
+name: vluna-vluna
+
+on:
+  push:
+    branches: [ main, master, develop, feature/** ]
+  pull_request:
+
+jobs:
+  vluna-core:
+    name: vluna-core lint & tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+          standalone: true
+
+      - name: Enable Corepack (fallback)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.0.0 --activate
+
+      - name: Install dependencies
+        run: |
+          pnpm i
+
+      - name: Lint vluna-core
+        run: pnpm core:lint
+
+      - name: Typecheck vluna-core (tests)
+        run: pnpm core:typecheck:tests
+
+      - name: Run vluna-core tests (community)
+        run: pnpm core:test:community
+
+      - name: Run vluna-core tests (enterprise)
+        run: pnpm core:test:enterprise
+
+  vluna-community:
+    name: vluna-community build & typecheck
+    runs-on: ubuntu-latest
+    needs: vluna-core
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+          standalone: true
+
+      - name: Enable Corepack (fallback)
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.0.0 --activate
+
+      - name: Install dependencies
+        run: |
+          pnpm i
+
+      - name: Build dependencies (core + platform)
+        run: pnpm build:core
+
+      - name: Typecheck vluna-community
+        run: pnpm community:typecheck
+
+      - name: Build vluna-community
+        run: pnpm build:community

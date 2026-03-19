@@ -1,0 +1,73 @@
+Business Source License 1.1
+Vluna Billing/Gate - Copyright (c) 2025 TapRay Studio
+
+Licensor: TapRay Studio ("Licensor")
+Licensed Work: Vluna Billing Engine/Usage Gate (the "Work")
+License Grant Date: 2025-12-1
+Change Date: 4 years after the License Grant Date
+Change License: MIT License
+
+1. License Grant (Non-Production)
+--------------------------------
+Under this License, you are granted the right to copy, modify, compile, and 
+use the Work for **non-production purposes**, including:
+  • evaluation,
+  • internal testing,
+  • non-commercial research,
+  • local development,
+  • academic or personal use.
+
+2. License Grant (Production Use)
+---------------------------------
+You MAY use the Work in **production** only if one of the following is true:
+
+(1) You are an end-user organization operating the Work 
+    **solely for your own products or internal services**, 
+    and NOT providing it as a commercial hosted service to others; or
+
+(2) You obtain a **Commercial License** from the Licensor 
+    authorizing production use.
+
+3. Restrictions
+---------------
+Unless you obtain a Commercial License from the Licensor, you MAY NOT:
+
+  (A) Offer the Work, or any modified version of it, 
+      as part of a **commercial hosted, SaaS, or cloud service**, including:
+        • multi-tenant hosted billing service,
+        • hosted usage-gating platform,
+        • charging customers for metering/authorization events,
+        • offering hosted APIs substantially similar to the Work.
+
+  (B) Use the Work to build a **competing commercial billing or usage-gating product**, 
+      including embedding it into a product whose primary purpose is 
+      usage metering, commit settlement, credit/grant management,
+      or AI API pay-as-you-go orchestration.
+
+  (C) Remove or alter copyright, license information, or attribution.
+
+  (D) Circumvent the Change License or Change Date.
+
+4. Change License
+-----------------
+On the **Change Date** (4 years after License Grant Date), 
+the Work will automatically become available under the **MIT License**,
+and this BSL will no longer apply to versions released prior to the Change Date.
+
+5. Development Use Is Always Allowed
+------------------------------------
+You may always:
+  • fork,
+  • modify,
+  • contribute,
+  • build plugins or extensions,
+  • run local or non-production deployments
+at any time, without needing a Commercial License.
+
+6. No Warranty
+--------------
+The Work is provided "AS IS", without warranty of any kind.
+
+7. Liability
+------------
+Licensor’s liability is limited to the maximum extent permitted by law.

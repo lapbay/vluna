@@ -1,0 +1,49 @@
+principal_resolver:
+  # Global default (used when no realm/app match)
+  default:
+    issuers:
+      - issuer: "https://v.id.tapray.com/oidc"
+        jwks_uri: "https://v.id.tapray.com/oidc/jwks"
+        audiences: ["https://monorepo.api.tapray.com"]
+        alg_whitelist: ["RS256","RS384","RS512","ES256","ES384","ES512"]
+        claim_rules:
+          - when: "has('organization_id')"
+            principal:
+              id: "$.organization_id"
+              source: "oidc:<iss>"
+              type: "organization"
+          - when: "has('sub')"
+            principal:
+              id: "$.sub"
+              source: "oidc:<iss>"
+              type: "user"
+        on_missing: "delegate_to_s2s"    # reject | use_sub | delegate_to_s2s
+
+  # Realm-level overrides (precede default)
+  realms:
+    - id: "realm_auth0_example"
+      issuers:
+        - issuer: "https://auth0.us-east.example.com/"
+          jwks_uri: "https://auth0.us-east.example.com/.well-known/jwks.json"
+          audiences: ["https://monorepo.api.tapray.com"]
+          claim_rules:
+            - when: "has('https://example.com/org_id')"
+              principal:
+                id: "$.https://example.com/org_id"
+                source: "oidc:<iss>"
+                type: "organization"
+          on_missing: "reject"
+
+    - id: "realm_inherit_example"
+      inherit: "default"
+      issuers:
+        - issuer: "https://logto.cn.example.com"
+          jwks_uri: "https://logto.cn.example.com/oidc/jwks"
+          audiences: ["billing.yourco.com.cn"]
+          claim_rules:
+            - when: "has('org.id')"
+              principal:
+                id: "$.org.id"
+                source: "oidc:logto-cn"
+                type: "organization"
+          on_missing: "delegate_to_s2s"

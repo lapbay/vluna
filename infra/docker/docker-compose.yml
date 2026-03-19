@@ -1,0 +1,59 @@
+# Base compose: edition set by VLUNA_EDITION (community|enterprise|cloud).
+# Postgres is optional: start it via --profile db or provide DATABASE_MIGRATOR_URI to an external service.
+
+services:
+  vluna:
+    image: vluna/${VLUNA_EDITION:-community}:latest
+    build:
+      # Build context is monorepo root; Dockerfile lives under vluna/oss/infra/docker
+      context: ../../..
+      dockerfile: vluna/oss/infra/docker/Dockerfile.${VLUNA_EDITION:-community}
+      args:
+        EDITION: ${VLUNA_EDITION:-community}
+    env_file:
+      - ../../apps/app-community/.env.production
+    environment:
+      NODE_ENV: production
+      # Override to point at external PostgreSQL; default expects the optional local db service.
+      DATABASE_MIGRATOR_URI: ${DATABASE_MIGRATOR_URI:-postgresql://vluna_superuser:vluna_superuser@db:5432/vluna}
+      DATABASE_URI: ${DATABASE_URI:-postgresql://vluna:vluna@db:5432/vluna}
+      VLUNA_PLANE: ${VLUNA_PLANE:-vluna}
+      VLUNA_DB_SCHEMA: ${VLUNA_DB_SCHEMA:-control_plane}
+      BILLING_MASTER_KEY: ${BILLING_MASTER_KEY:?set BILLING_MASTER_KEY}
+      VLUNA_DEV_RESET_AND_DEMO: 0
+    ports:
+      - "3002:3002"
+    # Leave db optional; enable via profile when you need the bundled Postgres.
+    profiles:
+      - api
+    networks:
+      - default
+
+  db:
+    image: postgres:16
+    profiles:
+      - db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vluna_superuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vluna_superuser}
+      POSTGRES_DB: ${POSTGRES_DB:-vluna}
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vluna_superuser} -d ${POSTGRES_DB:-vluna}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      default:
+        aliases:
+          - db.vluna.internal
+    volumes:
+      # Host-persisted data directory (relative to this compose file)
+      - ./dist/postgres:/var/lib/postgresql/data
+
+networks:
+  default:
+    name: vluna_default
+
+volumes: {}

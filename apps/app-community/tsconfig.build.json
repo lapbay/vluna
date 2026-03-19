@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "sourceMap": false,
+    "composite": true
+  },
+  "references": [
+    { "path": "../../packages/vluna-core/tsconfig.build.json" },
+    { "path": "../../packages/vluna-platform/tsconfig.build.json" }
+  ]
+}
