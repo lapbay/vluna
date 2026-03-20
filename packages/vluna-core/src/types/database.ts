@@ -34,6 +34,17 @@ export interface Database {
     created_at: Generated<Date>
     updated_at: Generated<Date>
   }
+  cloud_owner_accounts: {
+    owner_account_id: string
+    owner_kind: 'organization' | 'user'
+    owner_subject_id: string
+    admin_plane_principal_id: string
+    billing_account_id: ColumnType<string | null, string | null | undefined, string | null | undefined>
+    status: ColumnType<'active' | 'disabled', 'active' | 'disabled' | undefined, 'active' | 'disabled' | undefined>
+    metadata: ColumnType<Record<string, unknown>, Record<string, unknown> | undefined, Record<string, unknown> | undefined>
+    created_at: Generated<Date>
+    updated_at: Generated<Date>
+  }
   currencies: {
     code: string
     kind: 'fiat' | 'credit' | 'crypto' | 'token' | 'other'
