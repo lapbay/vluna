@@ -29,6 +29,7 @@ export interface RealmAuthWebhookConfig {
 export interface RealmAuthProfile {
   issuers: RealmIssuerConfig[]
   scopeClaim?: string
+  scopeMappings?: Record<string, string[]>
   issuerRoot?: string
   clients?: RealmAuthClientsConfig
   webhook?: RealmAuthWebhookConfig
@@ -112,6 +113,8 @@ type RealmMetadata = {
     issuers?: Array<{ issuer?: string; audiences?: string[]; jwks_uri?: string }>
     scope_claim?: string
     scopeClaim?: string
+    scope_mappings?: Record<string, string[]>
+    scopeMappings?: Record<string, string[]>
     issuer_root?: string
     issuerRoot?: string
     clients?: RealmClientsMetadata
@@ -328,11 +331,24 @@ export class RealmConfigService {
     if (parsed.length === 0) return null
     const scopeClaimRaw = authMeta.scope_claim ?? authMeta.scopeClaim
     const scopeClaim = typeof scopeClaimRaw === 'string' ? scopeClaimRaw.trim() : undefined
+    const scopeMappings = this.parseScopeMappings(authMeta.scope_mappings ?? authMeta.scopeMappings)
     const issuerRootRaw = authMeta.issuer_root ?? authMeta.issuerRoot
     const issuerRoot = typeof issuerRootRaw === 'string' ? issuerRootRaw.trim().replace(/\/$/, '') : undefined
     const clients = this.parseClients(authMeta.clients)
     const webhook = this.parseWebhook(authMeta.webhook)
-    return { issuers: parsed, scopeClaim: scopeClaim || undefined, issuerRoot, clients, webhook }
+    return { issuers: parsed, scopeClaim: scopeClaim || undefined, scopeMappings, issuerRoot, clients, webhook }
+  }
+
+  private parseScopeMappings(input: unknown): Record<string, string[]> | undefined {
+    if (!isRecord(input)) return undefined
+    const output: Record<string, string[]> = {}
+    for (const [capability, rawValues] of Object.entries(input)) {
+      const key = String(capability || '').trim()
+      if (!key || !Array.isArray(rawValues)) continue
+      const values = rawValues.map((value) => String(value || '').trim()).filter(Boolean)
+      if (values.length > 0) output[key] = values
+    }
+    return Object.keys(output).length > 0 ? output : undefined
   }
 
   private parseClients(input?: RealmClientsMetadata): RealmAuthClientsConfig | undefined {

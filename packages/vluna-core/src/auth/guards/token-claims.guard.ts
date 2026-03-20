@@ -9,6 +9,7 @@ import { detectAuthScheme } from '../utils/auth-scheme.js'
 import { REALM_DEFAULT_AUDIENCE, REQUIRED_AUDIENCE_KEY } from '../decorators/audience.decorator.js'
 import { REQUIRED_SCOPES_KEY } from '../decorators/scopes.decorator.js'
 import { SERVICE_ACCESS_POLICY, type ServiceAccessPolicy } from '../policies/service-access.policy.js'
+import { SCOPE_BYPASS_POLICY, type ScopeBypassPolicy } from '../policies/scope-bypass.policy.js'
 import { pool } from '../../db/index.js'
 import type { DatSessionClaims } from '../../features/dat/types/session.js'
 import { ALLOW_MISSING_REALM_KEY } from '../decorators/allow-missing-realm.decorator.js'
@@ -20,6 +21,7 @@ export class TokenClaimsGuard implements CanActivate {
     @Inject(TOKEN_VALIDATOR) private readonly validator: TokenValidator,
     @Inject(Reflector) private readonly reflector: Reflector,
     @Optional() @Inject(SERVICE_ACCESS_POLICY) private readonly serviceAccessPolicy?: ServiceAccessPolicy,
+    @Optional() @Inject(SCOPE_BYPASS_POLICY) private readonly scopeBypassPolicy?: ScopeBypassPolicy,
     @Optional() @Inject(RealmConfigService) private readonly realmConfig?: RealmConfigService,
   ) {}
 
@@ -70,7 +72,7 @@ export class TokenClaimsGuard implements CanActivate {
     }
 
     this.applyClaimsToContext(req, claims)
-    this.checkScopes(requiredScopes, claims, realmAuth)
+    await this.checkScopes(req, requiredScopes, claims, realmAuth)
     await this.maybeAllowServiceAccess(req)
     this.maybeApplyRealmAdmin(req)
     return true
@@ -230,8 +232,13 @@ export class TokenClaimsGuard implements CanActivate {
     ctx.platformToken = { scopes, version: Number.isFinite(versionRaw) ? versionRaw : 1, issuedBy }
   }
 
-  private checkScopes(required: string[], claims: TokenClaims, profile?: RealmAuthProfile | null): void {
+  private async checkScopes(req: AppRequest, required: string[], claims: TokenClaims, profile?: RealmAuthProfile | null): Promise<void> {
     if (!required || required.length === 0) return
+    if (this.scopeBypassPolicy && await this.scopeBypassPolicy.allowCanonicalScopes(req, required, profile)) {
+      return
+    }
+    const mappings = this.resolveScopeMappings(required, profile)
+    if (Object.keys(mappings).length === 0) return
     const provided = new Set<string>()
     for (const key of this.resolveScopeKeys(profile)) {
       for (const value of this.extractScopeValues(claims, key)) {
@@ -239,11 +246,25 @@ export class TokenClaimsGuard implements CanActivate {
       }
       if (provided.size > 0) break
     }
-    for (const scope of required) {
-      if (!provided.has(scope)) {
+    for (const canonicalScope of required) {
+      const acceptedScopes = mappings[canonicalScope] ?? [canonicalScope]
+      if (!acceptedScopes.some((scope) => provided.has(scope))) {
         throw new HttpException('insufficient_scope', 403)
       }
     }
+  }
+
+  private resolveScopeMappings(required: string[], profile?: RealmAuthProfile | null): Record<string, string[]> {
+    const configured = profile?.scopeMappings
+    if (!configured || Object.keys(configured).length === 0) {
+      return {}
+    }
+    const output: Record<string, string[]> = {}
+    for (const canonicalScope of required) {
+      const mapped = configured[canonicalScope]
+      output[canonicalScope] = Array.isArray(mapped) && mapped.length > 0 ? mapped : [canonicalScope]
+    }
+    return output
   }
 
   private resolveScopeKeys(profile?: RealmAuthProfile | null): string[] {

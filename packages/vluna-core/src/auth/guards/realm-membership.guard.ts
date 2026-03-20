@@ -29,7 +29,7 @@ export class RealmMembershipGuard implements CanActivate {
     if (this.realmAccessPolicy) {
       const allowed = await this.realmAccessPolicy.allowBearerRealmAccess(req, realmId)
       if (!allowed) {
-        throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'realm access denied' }, 403)
+        throw new HttpException({ code: 'AUTH.UNAUTHORIZED_REALM', message: 'realm access denied' }, 403)
       }
     }
     return true
