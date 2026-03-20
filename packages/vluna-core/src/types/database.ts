@@ -880,7 +880,7 @@ export interface Database {
     subject_type: 'operator'
     subject_id: string
     organization_id: ColumnType<string | null, string | null | undefined, string | null | undefined>
-    allowed_realms: ColumnType<string[], string[] | undefined, string[] | undefined>
+    allowed_realms: ColumnType<string[] | null, string[] | null | undefined, string[] | null | undefined>
     granted_scopes: ColumnType<string[], string[] | undefined, string[] | undefined>
     issued_by: ColumnType<string | null, string | null | undefined, string | null | undefined>
     status: 'active' | 'revoked' | 'expired'

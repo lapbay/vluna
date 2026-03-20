@@ -221,8 +221,11 @@ export class DatController {
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
   async createBootstrapToken(@Req() req: AppRequest, @Body() body: CreateBootstrapBody) {
     const realmId = String(req.ctx?.realmId || '').trim()
+    const allowUnscopedRealms = isCloudEdition()
     const subjectFromClaims = String(req.ctx?.sub || '').trim()
-    const subjectId = String(body?.subject_id || subjectFromClaims || '').trim()
+    const subjectId = allowUnscopedRealms
+      ? subjectFromClaims
+      : String(body?.subject_id || subjectFromClaims || '').trim()
     if (!subjectId) {
       throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'subject_id is required' }, 422)
     }
@@ -230,25 +233,32 @@ export class DatController {
     const allowedRealmsInput = Array.isArray(body?.allowed_realms) ? body.allowed_realms : []
     const requestedAllowedRealms = allowedRealmsInput.length
       ? allowedRealmsInput.map((value) => String(value || '').trim()).filter(Boolean)
-      : [realmId]
-    const grantableRealms = await resolveGrantableRealms(req, realmId)
-    const unauthorizedRealm = requestedAllowedRealms.find((candidate) => !grantableRealms.includes(candidate))
-    if (unauthorizedRealm) {
-      throw new HttpException(
-        { code: 'AUTH.UNAUTHORIZED_REALM', message: `allowed_realm ${unauthorizedRealm} is outside caller scope` },
-        403,
-      )
+      : (allowUnscopedRealms ? [] : [realmId])
+    if (requestedAllowedRealms.length > 0) {
+      const grantableRealms = await resolveGrantableRealms(req, realmId)
+      const unauthorizedRealm = requestedAllowedRealms.find((candidate) => !grantableRealms.includes(candidate))
+      if (unauthorizedRealm) {
+        throw new HttpException(
+          { code: 'AUTH.UNAUTHORIZED_REALM', message: `allowed_realm ${unauthorizedRealm} is outside caller scope` },
+          403,
+        )
+      }
     }
     const allowedRealms = Array.from(new Set(requestedAllowedRealms))
     const grantedScopes = normalizeScopes(body?.granted_scopes)
     const created = await this.bootstrapManagement.create({
       realm_id: realmId,
       subject_id: subjectId,
-      organization_id: toOptionalString(body?.organization_id),
+      organization_id: allowUnscopedRealms
+        ? toOptionalString((req.ctx?.claims as Record<string, unknown> | undefined)?.organization_id)
+        : toOptionalString(body?.organization_id),
       allowed_realms: allowedRealms,
       granted_scopes: grantedScopes,
       issued_by: toOptionalString(body?.issued_by),
       expires_at: toOptionalString(body?.expires_at),
+    }, {
+      requireAllowedRealms: !allowUnscopedRealms,
+      requireCurrentRealmIncluded: true,
     })
     return okEnvelope(created)
   }
@@ -257,7 +267,9 @@ export class DatController {
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
   async listBootstrapTokens(@Req() req: AppRequest) {
     const realmId = String(req.ctx?.realmId || '').trim()
-    const items = await this.bootstrapManagement.list(realmId)
+    const items = isCloudEdition()
+      ? await this.bootstrapManagement.listForSubject(resolveCloudBootstrapOwner(req))
+      : await this.bootstrapManagement.listForRealm(realmId)
     return okEnvelope({ items })
   }
 
@@ -265,7 +277,9 @@ export class DatController {
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
   async revealBootstrapToken(@Req() req: AppRequest, @Param('token_id') tokenId: string) {
     const realmId = String(req.ctx?.realmId || '').trim()
-    const data = await this.bootstrapManagement.reveal(realmId, tokenId)
+    const data = isCloudEdition()
+      ? await this.bootstrapManagement.revealForSubject(resolveCloudBootstrapOwner(req), tokenId)
+      : await this.bootstrapManagement.revealForRealm(realmId, tokenId)
     return okEnvelope(data)
   }
 
@@ -273,7 +287,9 @@ export class DatController {
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
   async revokeBootstrapToken(@Req() req: AppRequest, @Param('token_id') tokenId: string) {
     const realmId = String(req.ctx?.realmId || '').trim()
-    const revoked = await this.bootstrapManagement.revoke(realmId, tokenId)
+    const revoked = isCloudEdition()
+      ? await this.bootstrapManagement.revokeForSubject(resolveCloudBootstrapOwner(req), tokenId)
+      : await this.bootstrapManagement.revokeForRealm(realmId, tokenId)
     return okEnvelope({ revoked, token_id: tokenId })
   }
 }
@@ -344,4 +360,16 @@ async function resolveGrantableRealms(req: AppRequest, realmId: string): Promise
   }
 
   return realmId ? [realmId] : []
+}
+
+function resolveCloudBootstrapOwner(req: AppRequest): string {
+  const subjectId = String(req.ctx?.sub || req.ctx?.claims?.sub || '').trim()
+  if (!subjectId) {
+    throw new HttpException({ code: 'AUTH.MISSING_SUBJECT', message: 'subject missing' }, 401)
+  }
+  return subjectId
+}
+
+function isCloudEdition(): boolean {
+  return String(process.env.VLUNA_EDITION || '').toLowerCase() === 'cloud'
 }

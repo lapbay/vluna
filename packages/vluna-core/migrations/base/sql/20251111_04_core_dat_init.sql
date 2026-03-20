@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS dat_bootstrap_tokens (
   subject_type text NOT NULL DEFAULT 'operator',
   subject_id text NOT NULL,
   organization_id text NULL,
-  allowed_realms text[] NOT NULL DEFAULT '{}',
+  allowed_realms text[] DEFAULT NULL,
   granted_scopes text[] NOT NULL DEFAULT '{}',
   issued_by text NULL,
   status text NOT NULL DEFAULT 'active',

@@ -39,7 +39,7 @@ type CreateBootstrapParams = {
   realm_id: string
   subject_id: string
   organization_id?: string
-  allowed_realms: string[]
+  allowed_realms?: string[]
   granted_scopes: Array<'mcp:read' | 'mcp:write'>
   issued_by?: string
   expires_at?: string
@@ -47,12 +47,17 @@ type CreateBootstrapParams = {
 
 @Injectable()
 export class DatBootstrapManagementService {
-  async create(params: CreateBootstrapParams): Promise<BootstrapView | null> {
+  async create(
+    params: CreateBootstrapParams,
+    options?: { requireAllowedRealms?: boolean; requireCurrentRealmIncluded?: boolean },
+  ): Promise<BootstrapView | null> {
     const allowedRealms = normalizeStringArray(params.allowed_realms)
-    if (!allowedRealms.length) {
+    const requireAllowedRealms = options?.requireAllowedRealms !== false
+    const requireCurrentRealmIncluded = options?.requireCurrentRealmIncluded !== false
+    if (requireAllowedRealms && !allowedRealms.length) {
       throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'allowed_realms is required' }, 422)
     }
-    if (!allowedRealms.includes(params.realm_id)) {
+    if (requireCurrentRealmIncluded && allowedRealms.length > 0 && !allowedRealms.includes(params.realm_id)) {
       throw new HttpException({ code: 'AUTH.UNAUTHORIZED_REALM', message: 'allowed_realms must include current realm' }, 403)
     }
     const scopes = Array.from(new Set(params.granted_scopes))
@@ -88,7 +93,7 @@ export class DatBootstrapManagementService {
         tokenValue,
         params.subject_id,
         params.organization_id || '',
-        allowedRealms,
+        allowedRealms.length > 0 ? allowedRealms : null,
         scopes,
         params.issued_by || '',
         params.expires_at || null,
@@ -97,7 +102,7 @@ export class DatBootstrapManagementService {
     return mapBootstrapRow(result.rows[0], true)
   }
 
-  async list(realmId: string) {
+  async listForRealm(realmId: string) {
     const result = await pool.query<BootstrapRow>(
       `
       select *
@@ -110,7 +115,22 @@ export class DatBootstrapManagementService {
     return result.rows.map((row) => mapBootstrapRow(row, false))
   }
 
-  async reveal(realmId: string, tokenId: string): Promise<{ token_id: string; token: string; token_masked: string }> {
+  async listForSubject(subjectId: string) {
+    const normalizedSubjectId = String(subjectId || '').trim()
+    if (!normalizedSubjectId) return []
+    const result = await pool.query<BootstrapRow>(
+      `
+      select *
+      from dat_bootstrap_tokens
+      where subject_id = $1
+      order by created_at desc
+      `,
+      [normalizedSubjectId],
+    )
+    return result.rows.map((row) => mapBootstrapRow(row, false))
+  }
+
+  async revealForRealm(realmId: string, tokenId: string): Promise<{ token_id: string; token: string; token_masked: string }> {
     const id = String(tokenId || '').trim()
     if (!id) {
       throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'token_id is required' }, 422)
@@ -136,7 +156,37 @@ export class DatBootstrapManagementService {
     }
   }
 
-  async revoke(realmId: string, tokenId: string) {
+  async revealForSubject(subjectId: string, tokenId: string): Promise<{ token_id: string; token: string; token_masked: string }> {
+    const normalizedSubjectId = String(subjectId || '').trim()
+    const id = String(tokenId || '').trim()
+    if (!normalizedSubjectId) {
+      throw new HttpException({ code: 'AUTH.MISSING_SUBJECT', message: 'subject_id is required' }, 401)
+    }
+    if (!id) {
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'token_id is required' }, 422)
+    }
+    const result = await pool.query<Pick<BootstrapRow, 'token_id' | 'token_value'>>(
+      `
+      select token_id, token_value
+      from dat_bootstrap_tokens
+      where token_id = $1
+        and subject_id = $2
+      limit 1
+      `,
+      [id, normalizedSubjectId],
+    )
+    const row = result.rows[0]
+    if (!row?.token_value) {
+      throw new HttpException({ code: 'DAT.BOOTSTRAP_TOKEN_NOT_FOUND', message: 'bootstrap token not found' }, 404)
+    }
+    return {
+      token_id: row.token_id,
+      token: row.token_value,
+      token_masked: maskToken(row.token_value),
+    }
+  }
+
+  async revokeForRealm(realmId: string, tokenId: string) {
     const id = String(tokenId || '').trim()
     if (!id) {
       throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'token_id is required' }, 422)
@@ -149,6 +199,27 @@ export class DatBootstrapManagementService {
         and allowed_realms @> array[$2]::text[]
       `,
       [id, realmId],
+    )
+    return Number(result.rowCount || 0) > 0
+  }
+
+  async revokeForSubject(subjectId: string, tokenId: string) {
+    const normalizedSubjectId = String(subjectId || '').trim()
+    const id = String(tokenId || '').trim()
+    if (!normalizedSubjectId) {
+      throw new HttpException({ code: 'AUTH.MISSING_SUBJECT', message: 'subject_id is required' }, 401)
+    }
+    if (!id) {
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'token_id is required' }, 422)
+    }
+    const result = await pool.query(
+      `
+      update dat_bootstrap_tokens
+      set status = 'revoked', updated_at = now()
+      where token_id = $1
+        and subject_id = $2
+      `,
+      [id, normalizedSubjectId],
     )
     return Number(result.rowCount || 0) > 0
   }

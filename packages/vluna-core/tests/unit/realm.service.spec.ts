@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import type { Kysely } from 'kysely'
 import type { Database } from '../../src/types/database.js'
 import { createRealm, DEFAULT_BUNDLE_KEY, BASE_POLICY_NAME } from '../../src/services/realm.service.js'
-import { DEFAULT_SERVICE_API_KEY_PREFIX } from '../../src/security/service-api-key.service.js'
 
 type RealmRow = {
   realm_id: string
@@ -393,17 +392,12 @@ describe('createRealm baseline provisioning', { tags: ['unit'] }, () => {
     expect(db.gatePolicies[0].limit_minor).toBe(-1)
     expect(db.gatePolicies[0].bundle_id).toBe(db.gatePolicyBundles[0].bundle_id)
 
-    expect(db.serviceApiKeys).toHaveLength(1)
-    const createdKeyId = db.serviceApiKeys[0].key_id
-    expect(createdKeyId.startsWith(DEFAULT_SERVICE_API_KEY_PREFIX)).toBe(true)
-    expect(createdKeyId).toHaveLength(DEFAULT_SERVICE_API_KEY_PREFIX.length + 16)
-    expect(db.serviceApiKeys[0].allowed_realms).toEqual(['r1'])
+    expect(db.serviceApiKeys).toHaveLength(0)
   })
 
   it('is idempotent and updates realm metadata', async () => {
     const db = makeFakeDb()
     await createRealm(db as unknown as Kysely<Database>, { realmId: 'r1', name: 'Realm 1' })
-    const firstKeyId = db.serviceApiKeys[0]?.key_id
     await createRealm(db as unknown as Kysely<Database>, {
       realmId: 'r1',
       name: 'Realm 1b',
@@ -424,7 +418,6 @@ describe('createRealm baseline provisioning', { tags: ['unit'] }, () => {
     expect(db.gatePolicies[0].name).toBe(BASE_POLICY_NAME)
     expect(db.gatePolicyBundles).toHaveLength(1)
 
-    expect(db.serviceApiKeys).toHaveLength(1)
-    expect(db.serviceApiKeys[0].key_id).toBe(firstKeyId)
+    expect(db.serviceApiKeys).toHaveLength(0)
   })
 })

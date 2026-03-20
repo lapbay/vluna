@@ -135,7 +135,6 @@ export async function createRealm(
 ): Promise<void> {
   await ensureRealmRecord(trx, input)
   await ensureBaseGrantPrograms(trx, input.realmId)
-  await ensureDefaultServiceApiKey(trx, input.realmId)
   await ensureBaseGatingPolicy(trx, input.realmId)
   await ensureFallbackFeatureFamily(trx, input.realmId)
   await ensureDefaultBillingPlan(trx, input.realmId)
@@ -151,6 +150,7 @@ export async function ensureBootstrapRealm(
   }
 
   await createRealm(trx, input)
+  await ensureDefaultServiceApiKey(trx, realmId)
 
   const row = await trx
     .selectFrom('realms')
