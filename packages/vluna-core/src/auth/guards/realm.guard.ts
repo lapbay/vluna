@@ -1,4 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, HttpException, Inject } from '@nestjs/common'
+import { unknownRealmHttpException } from '../../common/errors.js'
 import type { AppRequest } from '../../types/app-request.js'
 import { RealmConfigService } from '../../security/realm-config.service.js'
 
@@ -15,7 +16,7 @@ export class RealmGuard implements CanActivate {
     try {
       const status = await this.realmConfig.getRealmStatus(realm)
       if (status === 'deleted') {
-        throw new HttpException('unknown_realm', 404)
+        throw unknownRealmHttpException(realm)
       }
       if (status !== 'active') {
         throw new HttpException('realm_inactive', 403)
@@ -35,7 +36,7 @@ export class RealmGuard implements CanActivate {
       // Back-compat until callers switch to realmConfig.auth
     } catch (err) {
       if ((err as { code?: string }).code === 'realm_not_found') {
-        throw new HttpException('unknown_realm', 404)
+        throw unknownRealmHttpException(realm)
       }
       throw err
     }

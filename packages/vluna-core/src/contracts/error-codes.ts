@@ -1,6 +1,6 @@
 // GENERATED FILE. Do not edit.
 // version: 1.0.0
-export type ErrorCode = 'OK' | 'AUTH.UNAUTHORIZED' | 'AUTH.INSUFFICIENT_SCOPE' | 'AUTH.TOKEN_EXPIRED' | 'VALIDATION.FIELD_REQUIRED' | 'RESOURCE.NOT_FOUND' | 'WRITE.DEFERRED' | 'WRITE.INVALID_PAYLOAD' | 'SERVER.UNEXPECTED' | 'SERVER.UPSTREAM' | 'SERVER.CONFIG' | 'VALIDATION.INVALID_INPUT';
+export type ErrorCode = 'OK' | 'AUTH.UNAUTHORIZED' | 'AUTH.INSUFFICIENT_SCOPE' | 'AUTH.TOKEN_EXPIRED' | 'AUTH.UNKNOWN_REALM' | 'VALIDATION.FIELD_REQUIRED' | 'RESOURCE.NOT_FOUND' | 'WRITE.DEFERRED' | 'WRITE.INVALID_PAYLOAD' | 'SERVER.UNEXPECTED' | 'SERVER.UPSTREAM' | 'SERVER.CONFIG' | 'VALIDATION.INVALID_INPUT';
 export type ErrorCodeMeta = { http?: number; retry?: 'never' | 'safe' | 'after'; default_message?: string; i18n_key?: string };
 export const ERROR_CATALOG = {
   "OK": {
@@ -21,6 +21,11 @@ export const ERROR_CATALOG = {
     "retry": "safe",
     "default_message": "The session has expired. Please sign in again.",
     "i18n_key": "errors.auth.tokenExpired"
+  },
+  "AUTH.UNKNOWN_REALM": {
+    "http": 200,
+    "retry": "never",
+    "default_message": "The selected realm is no longer available."
   },
   "VALIDATION.FIELD_REQUIRED": {
     "http": 200,

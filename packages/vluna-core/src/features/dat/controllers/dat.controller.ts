@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpException, Inject, Param, Post, Req, UseGuards } from '@nestjs/common'
 import { decodeJwt } from 'jose'
+import { unknownRealmHttpException } from '../../../common/errors.js'
 import { okEnvelope } from '../../../common/envelope.js'
 import { AuthRequiredGuard } from '../../../auth/guards/auth-required.guard.js'
 import { ServiceAuthGuard } from '../../../auth/guards/service-auth.guard.js'
@@ -138,8 +139,8 @@ export class DatController {
     const requested = String(requestedRealmId || '').trim()
     if (requested) {
       const status = await this.readRealmStatus(requested)
-      if (status === 'unknown') throw new HttpException('unknown_realm', 404)
-      if (status === 'deleted') throw new HttpException('unknown_realm', 404)
+      if (status === 'unknown') throw unknownRealmHttpException(requested)
+      if (status === 'deleted') throw unknownRealmHttpException(requested)
       if (status !== 'active') throw new HttpException('realm_inactive', 403)
       if (!activeAllowed.includes(requested)) {
         throw new HttpException({ code: 'AUTH.UNAUTHORIZED_REALM', message: 'requested realm not allowed' }, 403)
