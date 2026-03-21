@@ -7,14 +7,18 @@ import { ServiceApiKeyManagementService } from '../security/service-api-key-mana
 import type { Database } from '../types/database.js'
 import type { Kysely, Transaction } from 'kysely'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { hostname } from 'node:os'
 import { NestFactory } from '@nestjs/core'
 import { SchedulerModule } from '../modules/scheduler.module.js'
 import { PERIODIC_TASKS_ALL, type PeriodicTaskDefinition } from '../scheduler/periodic-task.types.js'
 import { parseRuntimeArgsFromArgv } from '../platform/runtime-args.js'
 import { scanAndUpsertReconciliations } from '../features/billing/services/reconciliations.service.js'
+import { AuditWriter } from '../support/audit/audit.writer.js'
+import { redactAuditValue } from '../support/audit/audit.redaction.js'
 
 type CommandContext = {
   argv: string[]
+  invocationId: string
 }
 
 type Command = {
@@ -410,12 +414,40 @@ const realmCreateCommand: Command = {
     const metadataJson = getStringFlag(args, 'metadata-json') || undefined
     const metadata = metadataJson ? parseMetadataJson(metadataJson) : undefined
 
-    const result = await db().transaction().execute(async (trx) => {
-      await createRealm(trx, { realmId, name, status, metadata })
-      return ensureDefaultServiceApiKeySecretForRealm(trx, realmId)
-    })
+    try {
+      const result = await db().transaction().execute(async (trx) => {
+        await createRealm(trx, { realmId, name, status, metadata })
+        const created = await ensureDefaultServiceApiKeySecretForRealm(trx, realmId)
+        await writeCliAudit({
+          trx,
+          invocationId: ctx.invocationId,
+          command: 'realm.create',
+          status: 'success',
+          realmId,
+          action: 'realm.create',
+          targetType: 'realm',
+          targetId: realmId,
+          body: { realm_id: realmId, name, status, metadata },
+        })
+        return created
+      })
 
-    printJson({ ok: true, realmId, keyId: result.keyId, secret: result.secretBase64, envTag: result.envTag })
+      printJson({ ok: true, realmId, keyId: result.keyId, secret: result.secretBase64, envTag: result.envTag })
+    } catch (error) {
+      await writeCliAudit({
+        invocationId: ctx.invocationId,
+        command: 'realm.create',
+        status: 'failure',
+        realmId,
+        action: 'realm.create',
+        targetType: 'realm',
+        targetId: realmId,
+        errorCode: 'CLI.COMMAND_FAILED',
+        body: { realm_id: realmId, name, status, metadata },
+        metadata: { error_message: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
+    }
   },
 }
 
@@ -460,13 +492,40 @@ const serviceKeyCreateCommand: Command = {
     const expiresAtFlag = getStringFlag(args, 'expires-at')
     const expiresAt = expiresAtFlag ? parseTimestampFlag(expiresAtFlag, 'expires-at') : null
 
-    const result = await db().transaction().execute(async (trx) => {
-      const manager = new ServiceApiKeyManagementService(new ServiceApiKeyService())
-      const created = await manager.createServiceApiKey(trx, realmId, { expires_at: expiresAt })
-      return created
-    })
+    try {
+      const result = await db().transaction().execute(async (trx) => {
+        const manager = new ServiceApiKeyManagementService(new ServiceApiKeyService())
+        const created = await manager.createServiceApiKey(trx, realmId, { expires_at: expiresAt })
+        await writeCliAudit({
+          trx,
+          invocationId: ctx.invocationId,
+          command: 'service-key.create',
+          status: 'success',
+          realmId,
+          action: 'service_key.create',
+          targetType: 'service_key',
+          targetId: created.key_id,
+          body: { realm_id: realmId, expires_at: expiresAt ? expiresAt.toISOString() : null },
+          metadata: { env_tag: created.env_tag },
+        })
+        return created
+      })
 
-    printJson({ ok: true, realmId, keyId: result.key_id, secret: result.secret, envTag: result.env_tag })
+      printJson({ ok: true, realmId, keyId: result.key_id, secret: result.secret, envTag: result.env_tag })
+    } catch (error) {
+      await writeCliAudit({
+        invocationId: ctx.invocationId,
+        command: 'service-key.create',
+        status: 'failure',
+        realmId,
+        action: 'service_key.create',
+        targetType: 'service_key',
+        errorCode: 'CLI.COMMAND_FAILED',
+        body: { realm_id: realmId, expires_at: expiresAt ? expiresAt.toISOString() : null },
+        metadata: { error_message: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
+    }
   },
 }
 
@@ -478,12 +537,40 @@ const serviceKeySecretCommand: Command = {
     const realmId = requireStringFlag(args, 'realm-id')
     const keyId = requireStringFlag(args, 'key-id')
 
-    const result = await db().transaction().execute(async (trx) => {
-      const { secretBase64, envTag } = await getServiceApiKeySecret(trx, realmId, keyId)
-      return { secretBase64, envTag }
-    })
+    try {
+      const result = await db().transaction().execute(async (trx) => {
+        const { secretBase64, envTag } = await getServiceApiKeySecret(trx, realmId, keyId)
+        await writeCliAudit({
+          trx,
+          invocationId: ctx.invocationId,
+          command: 'service-key.secret',
+          status: 'success',
+          realmId,
+          action: 'service_key.reveal',
+          targetType: 'service_key',
+          targetId: keyId,
+          body: { realm_id: realmId, key_id: keyId },
+          metadata: { env_tag: envTag },
+        })
+        return { secretBase64, envTag }
+      })
 
-    printJson({ ok: true, realmId, keyId, secret: result.secretBase64, envTag: result.envTag })
+      printJson({ ok: true, realmId, keyId, secret: result.secretBase64, envTag: result.envTag })
+    } catch (error) {
+      await writeCliAudit({
+        invocationId: ctx.invocationId,
+        command: 'service-key.secret',
+        status: 'failure',
+        realmId,
+        action: 'service_key.reveal',
+        targetType: 'service_key',
+        targetId: keyId,
+        errorCode: 'CLI.COMMAND_FAILED',
+        body: { realm_id: realmId, key_id: keyId },
+        metadata: { error_message: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
+    }
   },
 }
 
@@ -512,35 +599,79 @@ const datBootstrapCreateCommand: Command = {
     const token = `datb_${tokenId}_${secret}`
     const tokenHash = createHash('sha256').update(token).digest('hex')
 
-    await db()
-      .insertInto('dat_bootstrap_tokens')
-      .values({
+    try {
+      await db().transaction().execute(async (trx) => {
+        await trx
+          .insertInto('dat_bootstrap_tokens')
+          .values({
+            token_id: tokenId,
+            token_hash: tokenHash,
+            token_value: token,
+            subject_type: 'operator',
+            subject_id: subjectId,
+            organization_id: organizationId,
+            allowed_realms: allowedRealms,
+            granted_scopes: scopes,
+            issued_by: issuedBy,
+            status: 'active',
+            expires_at: expiresAt,
+          })
+          .execute()
+
+        await writeCliAudit({
+          trx,
+          invocationId: ctx.invocationId,
+          command: 'dat-bootstrap.create',
+          status: 'success',
+          realmId: allowedRealms[0],
+          action: 'dat_bootstrap_token.create',
+          targetType: 'dat_bootstrap_token',
+          targetId: tokenId,
+          body: {
+            token_id: tokenId,
+            subject_id: subjectId,
+            organization_id: organizationId,
+            allowed_realms: allowedRealms,
+            granted_scopes: scopes,
+            expires_at: expiresAt ? expiresAt.toISOString() : null,
+          },
+        })
+      })
+
+      printJson({
+        ok: true,
         token_id: tokenId,
-        token_hash: tokenHash,
-        token_value: token,
         subject_type: 'operator',
         subject_id: subjectId,
         organization_id: organizationId,
         allowed_realms: allowedRealms,
         granted_scopes: scopes,
-        issued_by: issuedBy,
-        status: 'active',
-        expires_at: expiresAt,
+        expires_at: expiresAt ? expiresAt.toISOString() : null,
+        token,
+        note: 'Store this token securely; it is only shown once.',
       })
-      .execute()
-
-    printJson({
-      ok: true,
-      token_id: tokenId,
-      subject_type: 'operator',
-      subject_id: subjectId,
-      organization_id: organizationId,
-      allowed_realms: allowedRealms,
-      granted_scopes: scopes,
-      expires_at: expiresAt ? expiresAt.toISOString() : null,
-      token,
-      note: 'Store this token securely; it is only shown once.',
-    })
+    } catch (error) {
+      await writeCliAudit({
+        invocationId: ctx.invocationId,
+        command: 'dat-bootstrap.create',
+        status: 'failure',
+        realmId: allowedRealms[0],
+        action: 'dat_bootstrap_token.create',
+        targetType: 'dat_bootstrap_token',
+        targetId: tokenId,
+        errorCode: 'CLI.COMMAND_FAILED',
+        body: {
+          token_id: tokenId,
+          subject_id: subjectId,
+          organization_id: organizationId,
+          allowed_realms: allowedRealms,
+          granted_scopes: scopes,
+          expires_at: expiresAt ? expiresAt.toISOString() : null,
+        },
+        metadata: { error_message: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
+    }
   },
 }
 
@@ -558,14 +689,44 @@ const datBootstrapRevokeCommand: Command = {
       throw new Error('Provide --token-id or --token')
     }
 
-    const result = await db()
-      .updateTable('dat_bootstrap_tokens')
-      .set({ status: 'revoked', updated_at: new Date() })
-      .where('token_id', '=', tokenId)
-      .where('status', '=', 'active')
-      .executeTakeFirst()
+    try {
+      const result = await db().transaction().execute(async (trx) => {
+        const updated = await trx
+          .updateTable('dat_bootstrap_tokens')
+          .set({ status: 'revoked', updated_at: new Date() })
+          .where('token_id', '=', tokenId)
+          .where('status', '=', 'active')
+          .executeTakeFirst()
 
-    printJson({ ok: true, token_id: tokenId, revoked: Number(result.numUpdatedRows || 0) > 0 })
+        await writeCliAudit({
+          trx,
+          invocationId: ctx.invocationId,
+          command: 'dat-bootstrap.revoke',
+          status: 'success',
+          action: 'dat_bootstrap_token.revoke',
+          targetType: 'dat_bootstrap_token',
+          targetId: tokenId,
+          body: { token_id: tokenId },
+          metadata: { revoked: Number(updated.numUpdatedRows || 0) > 0 },
+        })
+        return updated
+      })
+
+      printJson({ ok: true, token_id: tokenId, revoked: Number(result.numUpdatedRows || 0) > 0 })
+    } catch (error) {
+      await writeCliAudit({
+        invocationId: ctx.invocationId,
+        command: 'dat-bootstrap.revoke',
+        status: 'failure',
+        action: 'dat_bootstrap_token.revoke',
+        targetType: 'dat_bootstrap_token',
+        targetId: tokenId,
+        errorCode: 'CLI.COMMAND_FAILED',
+        body: { token_id: tokenId },
+        metadata: { error_message: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
+    }
   },
 }
 
@@ -797,6 +958,53 @@ const commands: Record<string, Command> = {
   'tasks.worker': tasksWorkerCommand,
 }
 
+const cliAuditWriter = new AuditWriter()
+
+async function writeCliAudit(input: {
+  trx?: Kysely<Database> | Transaction<Database>
+  invocationId: string
+  command: string
+  status: 'success' | 'failure'
+  realmId?: string
+  action: string
+  targetType?: string
+  targetId?: string
+  errorCode?: string
+  body?: unknown
+  metadata?: Record<string, unknown>
+}) {
+  await cliAuditWriter.write(
+    {
+      scopeType: input.realmId ? 'realm' : 'platform',
+      realmId: input.realmId,
+      actorType: 'cli',
+      actorDisplay: 'vlunactl',
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      operationId: input.command,
+      method: 'CLI',
+      path: input.command,
+      routeTemplate: 'vlunactl',
+      status: input.status,
+      httpStatus: 0,
+      errorCode: input.errorCode,
+      bodyJsonRedacted: redactAuditValue(input.body),
+      metadata: {
+        source: 'vlunactl',
+        command: input.command,
+        argv: process.argv.slice(2),
+        cwd: process.cwd(),
+        hostname: hostname(),
+        pid: process.pid,
+        invocation_id: input.invocationId,
+        ...(input.metadata ?? {}),
+      },
+    },
+    input.trx,
+  )
+}
+
 function parseDatBootstrapTokenId(token: string): string | undefined {
   const normalized = token.trim()
   const match = normalized.match(/^datb_(dbt_[A-Za-z0-9]+)_[A-Za-z0-9_-]+$/)
@@ -966,6 +1174,7 @@ export async function runvlunactl(argv: string[]): Promise<void> {
     process.exitCode = 2
     return
   }
+  const invocationId = randomUUID()
 
   const requiresMigrator = resolved.command.requiresMigrator !== false
   if (requiresMigrator) {
@@ -973,7 +1182,7 @@ export async function runvlunactl(argv: string[]): Promise<void> {
     if (!superuserUri) {
       throw new Error('DATABASE_MIGRATOR_URI is required (use a superuser/owner connection for vlunactl)')
     }
-    await withDatabaseConnection(superuserUri, async () => resolved.command.run({ argv: resolved.rest }))
+    await withDatabaseConnection(superuserUri, async () => resolved.command.run({ argv: resolved.rest, invocationId }))
     return
   }
 
@@ -981,7 +1190,7 @@ export async function runvlunactl(argv: string[]): Promise<void> {
   if (!runtimeUri) {
     throw new Error('DATABASE_URI is required for tasks commands')
   }
-  await withDatabaseConnection(runtimeUri, async () => resolved.command.run({ argv: resolved.rest }))
+  await withDatabaseConnection(runtimeUri, async () => resolved.command.run({ argv: resolved.rest, invocationId }))
 }
 
 async function main(): Promise<void> {

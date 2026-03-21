@@ -7,6 +7,7 @@ import { ServiceAuthGuard } from '../../../auth/guards/service-auth.guard.js'
 import { TokenClaimsGuard } from '../../../auth/guards/token-claims.guard.js'
 import { RealmMembershipGuard } from '../../../auth/guards/realm-membership.guard.js'
 import { IdempotencyInterceptor } from '../../../support/idempotency.interceptor.js'
+import { Audit } from '../../../support/audit/audit.decorator.js'
 import type { AppRequest } from '../../../types/app-request.js'
 import type { operations as BillingOps } from '../../../contracts/billing-mgt.js'
 import { JsonRequestBody, JsonResponse, QueryParams } from '../../../contracts/openapi-helpers.js'
@@ -55,6 +56,15 @@ export class FeaturesController {
 
   @Post('features')
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: ({ reply, error }) => {
+      if (error) return 'feature.upsert'
+      return reply.statusCode === 201 ? 'feature.create' : 'feature.update'
+    },
+    operationId: 'upsertFeature',
+    targetType: 'feature',
+    targetIdFrom: 'response.data.feature_id',
+  })
   async upsertFeature(
     @Req() req: AppRequest,
     @Res() res: FastifyReply,
@@ -75,6 +85,12 @@ export class FeaturesController {
 
   @Patch('features/:feature_id')
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'feature.update',
+    operationId: 'updateFeature',
+    targetType: 'feature',
+    targetIdFrom: 'params.feature_id',
+  })
   async updateFeature(
     @Req() req: AppRequest,
     @Param('feature_id') featureId: string,
@@ -85,6 +101,12 @@ export class FeaturesController {
   }
 
   @Delete('features/:feature_id')
+  @Audit({
+    action: 'feature.delete',
+    operationId: 'deleteFeature',
+    targetType: 'feature',
+    targetIdFrom: 'params.feature_id',
+  })
   async deleteFeature(
     @Req() req: AppRequest,
     @Param('feature_id') featureId: string,

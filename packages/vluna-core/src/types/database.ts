@@ -5,6 +5,32 @@ import type { ColumnType, Generated } from 'kysely'
 export type LedgerComponentKind = 'charge' | 'cost' | 'tax' | 'rebate' | 'fee' | 'subsidy' | 'reserve' | 'transfer'
 
 export interface Database {
+  audit_logs: {
+    audit_id: string
+    occurred_at: ColumnType<Date, Date | undefined, never>
+    scope_type: 'realm' | 'platform'
+    realm_id: ColumnType<string | null, string | null | undefined, never>
+    actor_type: 'user' | 'organization' | 'service_key' | 'dat_session' | 'cli' | 'platform' | 'system'
+    actor_id: ColumnType<string | null, string | null | undefined, never>
+    actor_display: ColumnType<string | null, string | null | undefined, never>
+    auth_scheme: ColumnType<string | null, string | null | undefined, never>
+    action: string
+    target_type: ColumnType<string | null, string | null | undefined, never>
+    target_id: ColumnType<string | null, string | null | undefined, never>
+    operation_id: ColumnType<string | null, string | null | undefined, never>
+    method: string
+    path: string
+    route_template: ColumnType<string | null, string | null | undefined, never>
+    status: 'success' | 'failure'
+    http_status: number
+    error_code: ColumnType<string | null, string | null | undefined, never>
+    trace_id: ColumnType<string | null, string | null | undefined, never>
+    params_json: ColumnType<unknown | null, unknown | null | undefined, never>
+    query_json: ColumnType<unknown | null, unknown | null | undefined, never>
+    body_json_redacted: ColumnType<unknown | null, unknown | null | undefined, never>
+    metadata: ColumnType<Record<string, unknown>, Record<string, unknown> | undefined, never>
+    created_at: Generated<Date>
+  }
   feature_families: {
     feature_family_id: Generated<string>
     realm_id: string

@@ -8,6 +8,7 @@ import { ServiceAccountGuard } from '../../../auth/guards/service-account.guard.
 import { TokenClaimsGuard } from '../../../auth/guards/token-claims.guard.js'
 import { RealmMembershipGuard } from '../../../auth/guards/realm-membership.guard.js'
 import { IdempotencyInterceptor } from '../../../support/idempotency.interceptor.js'
+import { Audit } from '../../../support/audit/audit.decorator.js'
 import type { AppRequest } from '../../../types/app-request.js'
 import type { operations as BillingOps } from '../../../contracts/billing-mgt.js'
 import { JsonRequestBody, JsonResponse, QueryParams } from '../../../contracts/openapi-helpers.js'
@@ -63,6 +64,15 @@ export class BillingPlansController {
 
   @Post('billing-plans')
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: ({ reply, error }) => {
+      if (error) return 'plan.upsert'
+      return reply.statusCode === 201 ? 'plan.create' : 'plan.update'
+    },
+    operationId: 'upsertBillingPlan',
+    targetType: 'billing_plan',
+    targetIdFrom: 'response.data.plan_id',
+  })
   async upsertBillingPlan(
     @Req() req: AppRequest,
     @Res() res: FastifyReply,
@@ -83,6 +93,12 @@ export class BillingPlansController {
 
   @Patch('billing-plans/:plan_id')
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'plan.update',
+    operationId: 'updateBillingPlan',
+    targetType: 'billing_plan',
+    targetIdFrom: 'params.plan_id',
+  })
   async updateBillingPlan(
     @Req() req: AppRequest,
     @Param('plan_id') planId: string,
@@ -104,6 +120,12 @@ export class BillingPlansController {
 
   @Post('billing-plans/:plan_id/entitlements')
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'plan.entitlements.upsert',
+    operationId: 'upsertBillingPlanEntitlements',
+    targetType: 'billing_plan',
+    targetIdFrom: 'params.plan_id',
+  })
   async upsertBillingPlanEntitlements(
     @Req() req: AppRequest,
     @Res() res: FastifyReply,
@@ -123,6 +145,12 @@ export class BillingPlansController {
 
   @Delete('billing-plans/:plan_id/entitlements/:bpe_id')
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'plan.entitlements.delete',
+    operationId: 'deleteBillingPlanEntitlement',
+    targetType: 'billing_plan_entitlement',
+    targetIdFrom: 'params.bpe_id',
+  })
   async deleteBillingPlanEntitlement(
     @Req() req: AppRequest,
     @Param('plan_id') planId: string,
@@ -145,6 +173,12 @@ export class BillingPlansController {
   @Post('billing-plan-assignments')
   @UseGuards(ServiceAccountGuard)
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'plan.assignment.create',
+    operationId: 'createBillingPlanAssignment',
+    targetType: 'billing_plan_assignment',
+    targetIdFrom: 'response.data.assignment_id',
+  })
   async createBillingPlanAssignment(
     @Req() req: AppRequest,
     @Res() res: FastifyReply,
@@ -159,6 +193,12 @@ export class BillingPlansController {
   @Patch('billing-plan-assignments/:assignment_id')
   @UseGuards(ServiceAccountGuard)
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'plan.assignment.update',
+    operationId: 'updateBillingPlanAssignment',
+    targetType: 'billing_plan_assignment',
+    targetIdFrom: 'params.assignment_id',
+  })
   async updateBillingPlanAssignment(
     @Req() req: AppRequest,
     @Param('assignment_id') assignmentId: string,

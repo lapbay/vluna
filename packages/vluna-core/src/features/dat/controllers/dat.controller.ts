@@ -23,6 +23,7 @@ import { RealmGuard } from '../../../auth/guards/realm.guard.js'
 import { OptionalRealmGuard } from '../../../auth/guards/optional-realm.guard.js'
 import { RealmConfigService } from '../../../security/realm-config.service.js'
 import { pool } from '../../../db/index.js'
+import { Audit } from '../../../support/audit/audit.decorator.js'
 
 type IssueSessionBody = {
   requested_scopes?: string[]
@@ -62,6 +63,13 @@ export class DatController {
 
   @Post('session/issue')
   @UseGuards(OptionalRealmGuard, AuthRequiredGuard, DatSessionIssueAuthGuard, DatSessionIssueRateLimitGuard)
+  @Audit({
+    action: 'dat_token.create',
+    operationId: 'issueDatSession',
+    targetType: 'dat_token',
+    targetIdFrom: 'response.data.jti',
+    redact: ['body.access_token'],
+  })
   async issueSession(@Req() req: AppRequest, @Body() body: IssueSessionBody) {
     const requested_scopes = normalizeScopes(body?.requested_scopes)
     const requested_realm_id = toOptionalString(body?.requested_realm_id)
@@ -167,6 +175,19 @@ export class DatController {
 
   @Post('session/revoke')
   @UseGuards(AuthRequiredGuard, DatBootstrapGuard)
+  @Audit({
+    action: 'dat_token.revoke',
+    operationId: 'revokeDatSession',
+    targetType: 'dat_token',
+    targetIdFrom: ({ req, responseBody }) => {
+      const body = req.body as RevokeBody | undefined
+      if (typeof body?.jti === 'string' && body.jti.trim()) return body.jti.trim()
+      const response = responseBody as { data?: { jti?: unknown } } | undefined
+      if (typeof response?.data?.jti === 'string' && response.data.jti.trim()) return response.data.jti.trim()
+      return undefined
+    },
+    redact: ['body.access_token'],
+  })
   async revokeSession(@Req() req: AppRequest, @Body() body: RevokeBody) {
     const bootstrap = req.ctx?.datBootstrap
     if (!bootstrap) {
@@ -219,6 +240,12 @@ export class DatController {
 
   @Post('/bootstrap-tokens')
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
+  @Audit({
+    action: 'dat_bootstrap_token.create',
+    operationId: 'createDatBootstrapToken',
+    targetType: 'dat_bootstrap_token',
+    targetIdFrom: 'response.data.token_id',
+  })
   async createBootstrapToken(@Req() req: AppRequest, @Body() body: CreateBootstrapBody) {
     const realmId = String(req.ctx?.realmId || '').trim()
     const allowUnscopedRealms = isCloudEdition()
@@ -275,6 +302,16 @@ export class DatController {
 
   @Get('/bootstrap-tokens/:token_id/reveal')
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
+  @Audit({
+    action: 'dat_bootstrap_token.reveal',
+    operationId: 'revealDatBootstrapToken',
+    targetType: 'dat_bootstrap_token',
+    targetIdFrom: 'params.token_id',
+    successEvaluator: ({ responseBody }) => {
+      const response = responseBody as { data?: { token?: unknown } } | undefined
+      return typeof response?.data?.token === 'string' && response.data.token.trim().length > 0
+    },
+  })
   async revealBootstrapToken(@Req() req: AppRequest, @Param('token_id') tokenId: string) {
     const realmId = String(req.ctx?.realmId || '').trim()
     const data = isCloudEdition()
@@ -285,6 +322,12 @@ export class DatController {
 
   @Post('/bootstrap-tokens/:token_id/revoke')
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
+  @Audit({
+    action: 'dat_bootstrap_token.revoke',
+    operationId: 'revokeDatBootstrapToken',
+    targetType: 'dat_bootstrap_token',
+    targetIdFrom: 'params.token_id',
+  })
   async revokeBootstrapToken(@Req() req: AppRequest, @Param('token_id') tokenId: string) {
     const realmId = String(req.ctx?.realmId || '').trim()
     const revoked = isCloudEdition()

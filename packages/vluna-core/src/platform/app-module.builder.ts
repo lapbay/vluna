@@ -13,6 +13,7 @@ import { ScatteredApiModule } from '../features/system/scattered-api.module.js'
 import { SchedulerModule } from '../modules/scheduler.module.js'
 import { DatModule } from '../features/dat/dat.module.js'
 import { AdminPlaneModule } from '../modules/admin-plane.module.js'
+import { AuditModule } from '../support/audit.module.js'
 import type { RuntimeArgs } from './runtime-args.js'
 
 type NestImport = Type | DynamicModule
@@ -47,6 +48,7 @@ export const createAppModule = (options: PlatformModuleOptions = {}) => {
 
   const imports: NestImport[] = [
     EventEmitterModule.forRoot(),
+    AuditModule,
     HealthModule,
     TokensModule,
     SecurityModule,

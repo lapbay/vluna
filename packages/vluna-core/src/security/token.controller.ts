@@ -10,6 +10,7 @@ import { JsonRequestBody, JsonResponse } from '../contracts/openapi-helpers.js'
 import type { AppRequest } from '../types/app-request.js'
 import { okEnvelope } from '../common/envelope.js'
 import { ensureBillingAccount } from './principal/billing-account.resolver.js'
+import { Audit } from '../support/audit/audit.decorator.js'
 
 type IssueTokenBody = JsonRequestBody<BillingOps, 'issuePlatformToken'>
 type IssueToken200 = JsonResponse<BillingOps, 'issuePlatformToken', 200>
@@ -22,6 +23,11 @@ export class TokenController {
   @Post('issue')
   @HttpCode(200)
   @UseInterceptors(IdempotencyInterceptor)
+  @Audit({
+    action: 'platform_token.issue',
+    operationId: 'issuePlatformToken',
+    targetType: 'platform_token',
+  })
   async issuePlatformToken(@Req() req: AppRequest, @Body() body: IssueTokenBody): Promise<IssueToken200> {
     const realmId = String(req?.ctx?.realmId || '').trim()
     if (!realmId) {

@@ -11,6 +11,7 @@ import { TraceHeadersInterceptor } from '../support/trace-headers.interceptor.js
 import { ExposeHeadersInterceptor } from '../support/expose-headers.interceptor.js'
 import { PermissionsChangedInterceptor } from '../support/permissions-changed.interceptor.js'
 import { DbSessionInterceptor } from '../support/db-session.interceptor.js'
+import { AuditInterceptor } from '../support/audit/audit.interceptor.js'
 import { ValidationPipe } from '@nestjs/common'
 import { ServiceApiKeyService } from '../security/service-api-key.service.js'
 import { setupDatabaseWithGuards } from '../db/setup.js'
@@ -81,6 +82,7 @@ export const bootstrapApp = async (AppModule: Type, opts?: BootstrapOptions) => 
   app.enableShutdownHooks()
   app.useGlobalInterceptors(
     new DbSessionInterceptor(),
+    app.get(AuditInterceptor),
     new EnvelopeInterceptor(),
     new TraceHeadersInterceptor(),
     new PermissionsChangedInterceptor(),
