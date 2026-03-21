@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   params_json jsonb NULL,
   query_json jsonb NULL,
   body_json_redacted jsonb NULL,
+  response_json_redacted jsonb NULL,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT chk_audit_scope_type CHECK (scope_type IN ('realm', 'platform')),

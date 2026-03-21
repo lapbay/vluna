@@ -24,6 +24,10 @@ export type AuditOptions = {
   targetType?: string
   targetIdFrom?: AuditValueResolver
   redact?: string[]
+  mask?: string[]
+  captureResponse?: boolean
+  responseRedact?: string[]
+  responseMask?: string[]
   disable?: boolean
   successEvaluator?: AuditSuccessEvaluator
 }
@@ -60,5 +64,6 @@ export type AuditLogInsert = {
   paramsJson?: unknown
   queryJson?: unknown
   bodyJsonRedacted?: unknown
+  responseJsonRedacted?: unknown
   metadata?: Record<string, unknown>
 }

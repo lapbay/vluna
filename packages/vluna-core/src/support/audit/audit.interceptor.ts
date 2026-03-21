@@ -105,9 +105,24 @@ export class AuditInterceptor implements NestInterceptor {
         httpStatus,
         errorCode: resolveAuditErrorCode(resolverContext.error, resolverContext.responseBody),
         traceId: req.ctx?.traceId,
-        paramsJson: redactAuditValue(req.params, filterRedactions(explicitRedactions, 'params')),
-        queryJson: redactAuditValue(req.query, filterRedactions(explicitRedactions, 'query')),
-        bodyJsonRedacted: redactAuditValue(req.body, filterRedactions(explicitRedactions, 'body')),
+        paramsJson: redactAuditValue(req.params, {
+          redactPaths: filterPaths(explicitRedactions, 'params'),
+          maskPaths: filterPaths(options.mask ?? [], 'params'),
+        }),
+        queryJson: redactAuditValue(req.query, {
+          redactPaths: filterPaths(explicitRedactions, 'query'),
+          maskPaths: filterPaths(options.mask ?? [], 'query'),
+        }),
+        bodyJsonRedacted: redactAuditValue(req.body, {
+          redactPaths: filterPaths(explicitRedactions, 'body'),
+          maskPaths: filterPaths(options.mask ?? [], 'body'),
+        }),
+        responseJsonRedacted: options.captureResponse
+          ? redactAuditValue(resolverContext.responseBody, {
+              redactPaths: options.responseRedact ?? [],
+              maskPaths: options.responseMask ?? [],
+            })
+          : undefined,
         metadata: {
           plane: req.ctx?.plane ?? null,
           billing_account_id: req.ctx?.billingAccountId ?? null,
@@ -131,7 +146,7 @@ function resolveAuditMetadataFallback(context: ExecutionContext): AuditOptions |
   return Reflect.getMetadata(AUDIT_METADATA_KEY, classRef.prototype[handlerName]) as AuditOptions | undefined
 }
 
-function filterRedactions(paths: string[], prefix: 'params' | 'query' | 'body'): string[] {
+function filterPaths(paths: string[], prefix: 'params' | 'query' | 'body'): string[] {
   return paths
     .map((path) => String(path || '').trim())
     .filter((path) => path.startsWith(`${prefix}.`))

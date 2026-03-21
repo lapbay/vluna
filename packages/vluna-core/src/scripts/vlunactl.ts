@@ -505,7 +505,12 @@ const serviceKeyCreateCommand: Command = {
           action: 'service_key.create',
           targetType: 'service_key',
           targetId: created.key_id,
-          body: { realm_id: realmId, expires_at: expiresAt ? expiresAt.toISOString() : null },
+          body: {
+            realm_id: realmId,
+            expires_at: expiresAt ? expiresAt.toISOString() : null,
+            secret: created.secret,
+          },
+          maskPaths: ['secret'],
           metadata: { env_tag: created.env_tag },
         })
         return created
@@ -549,7 +554,8 @@ const serviceKeySecretCommand: Command = {
           action: 'service_key.reveal',
           targetType: 'service_key',
           targetId: keyId,
-          body: { realm_id: realmId, key_id: keyId },
+          body: { realm_id: realmId, key_id: keyId, secret: secretBase64 },
+          maskPaths: ['secret'],
           metadata: { env_tag: envTag },
         })
         return { secretBase64, envTag }
@@ -634,7 +640,9 @@ const datBootstrapCreateCommand: Command = {
             allowed_realms: allowedRealms,
             granted_scopes: scopes,
             expires_at: expiresAt ? expiresAt.toISOString() : null,
+            token,
           },
+          maskPaths: ['token'],
         })
       })
 
@@ -971,6 +979,7 @@ async function writeCliAudit(input: {
   targetId?: string
   errorCode?: string
   body?: unknown
+  maskPaths?: string[]
   metadata?: Record<string, unknown>
 }) {
   await cliAuditWriter.write(
@@ -989,7 +998,7 @@ async function writeCliAudit(input: {
       status: input.status,
       httpStatus: 0,
       errorCode: input.errorCode,
-      bodyJsonRedacted: redactAuditValue(input.body),
+      bodyJsonRedacted: redactAuditValue(input.body, { maskPaths: input.maskPaths }),
       metadata: {
         source: 'vlunactl',
         command: input.command,

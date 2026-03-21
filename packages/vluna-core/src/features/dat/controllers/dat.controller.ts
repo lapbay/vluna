@@ -307,6 +307,8 @@ export class DatController {
     operationId: 'revealDatBootstrapToken',
     targetType: 'dat_bootstrap_token',
     targetIdFrom: 'params.token_id',
+    captureResponse: true,
+    responseMask: ['data.token'],
     successEvaluator: ({ responseBody }) => {
       const response = responseBody as { data?: { token?: unknown } } | undefined
       return typeof response?.data?.token === 'string' && response.data.token.trim().length > 0

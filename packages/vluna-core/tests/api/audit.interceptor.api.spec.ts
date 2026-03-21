@@ -67,6 +67,7 @@ describe('AuditInterceptor', () => {
           secret: '[REDACTED]',
           display_name: 'A',
         },
+        responseJsonRedacted: undefined,
       }),
       undefined,
     )
@@ -118,6 +119,8 @@ describe('AuditInterceptor', () => {
         const response = responseBody as { data?: { token?: unknown } } | undefined
         return typeof response?.data?.token === 'string' && response.data.token.length > 0
       },
+      captureResponse: true,
+      responseMask: ['data.token'],
     }
 
     await (interceptor as unknown as { writeAudit: (options: AuditOptions, req: AppRequest, reply: FastifyReply, ctx: AuditValueResolverContext) => Promise<void> })
@@ -131,6 +134,14 @@ describe('AuditInterceptor', () => {
         action: 'dat_bootstrap_token.reveal',
         targetId: 'dbt_1',
         status: 'success',
+        responseJsonRedacted: {
+          ok: true,
+          code: 'OK',
+          data: {
+            token_id: 'dbt_1',
+            token: 'secr⋯alue',
+          },
+        },
       }),
       undefined,
     )
@@ -152,6 +163,14 @@ describe('AuditInterceptor', () => {
         action: 'dat_bootstrap_token.reveal',
         targetId: 'dbt_1',
         status: 'failure',
+        responseJsonRedacted: {
+          ok: true,
+          code: 'OK',
+          data: {
+            token_id: 'dbt_1',
+            token_masked: 'datb_***',
+          },
+        },
       }),
       undefined,
     )

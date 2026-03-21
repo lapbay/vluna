@@ -28,6 +28,7 @@ export interface Database {
     params_json: ColumnType<unknown | null, unknown | null | undefined, never>
     query_json: ColumnType<unknown | null, unknown | null | undefined, never>
     body_json_redacted: ColumnType<unknown | null, unknown | null | undefined, never>
+    response_json_redacted: ColumnType<unknown | null, unknown | null | undefined, never>
     metadata: ColumnType<Record<string, unknown>, Record<string, unknown> | undefined, never>
     created_at: Generated<Date>
   }

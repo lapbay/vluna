@@ -10,9 +10,16 @@ const GLOBAL_SENSITIVE_KEYS = new Set([
   'refreshtoken',
 ])
 
-export function redactAuditValue(value: unknown, explicitPaths: string[] = []): unknown {
-  const cloned = cloneAndRedact(value)
-  for (const path of explicitPaths) {
+export function redactAuditValue(
+  value: unknown,
+  options: {
+    redactPaths?: string[]
+    maskPaths?: string[]
+  } = {},
+): unknown {
+  const maskPathSet = new Set((options.maskPaths ?? []).map((path) => normalizePath(path).join('.')).filter(Boolean))
+  const cloned = cloneAndRedact(value, [], maskPathSet)
+  for (const path of options.redactPaths ?? []) {
     const segments = normalizePath(path)
     if (segments.length === 0) continue
     applyExplicitRedaction(cloned, segments)
@@ -20,16 +27,22 @@ export function redactAuditValue(value: unknown, explicitPaths: string[] = []): 
   return cloned
 }
 
-function cloneAndRedact(value: unknown): unknown {
+function cloneAndRedact(value: unknown, parentPath: string[] = [], maskPathSet: Set<string> = new Set()): unknown {
   if (value === null || value === undefined) return value
-  if (Array.isArray(value)) return value.map((entry) => cloneAndRedact(entry))
+  if (Array.isArray(value)) return value.map((entry) => cloneAndRedact(entry, parentPath, maskPathSet))
   if (value instanceof Date) return value.toISOString()
   if (Buffer.isBuffer(value)) return DEFAULT_REDACTED_VALUE
   if (typeof value !== 'object') return value
 
   const output: Record<string, unknown> = {}
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    output[key] = shouldRedactKey(key) ? DEFAULT_REDACTED_VALUE : cloneAndRedact(entry)
+    const nextPath = [...parentPath, key]
+    const pathKey = nextPath.join('.')
+    if (maskPathSet.has(pathKey)) {
+      output[key] = maskAuditString(entry)
+      continue
+    }
+    output[key] = shouldRedactKey(key) ? DEFAULT_REDACTED_VALUE : cloneAndRedact(entry, nextPath, maskPathSet)
   }
   return output
 }
@@ -66,4 +79,11 @@ function applyExplicitRedaction(value: unknown, segments: string[]) {
     return
   }
   applyExplicitRedaction(next, tail)
+}
+
+function maskAuditString(value: unknown): string {
+  const raw = typeof value === 'string' ? value : String(value ?? '')
+  if (!raw) return DEFAULT_REDACTED_VALUE
+  if (raw.length <= 8) return `${raw.slice(0, 1)}⋯${raw.slice(-1)}`
+  return `${raw.slice(0, 4)}⋯${raw.slice(-4)}`
 }

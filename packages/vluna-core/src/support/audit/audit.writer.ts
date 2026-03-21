@@ -37,6 +37,7 @@ export class AuditWriter {
           params_json: entry.paramsJson ?? null,
           query_json: entry.queryJson ?? null,
           body_json_redacted: entry.bodyJsonRedacted ?? null,
+          response_json_redacted: entry.responseJsonRedacted ?? null,
           metadata: entry.metadata ?? {},
         })
         .execute()
