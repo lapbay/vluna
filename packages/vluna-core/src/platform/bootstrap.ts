@@ -62,18 +62,25 @@ export const bootstrapApp = async (AppModule: Type, opts?: BootstrapOptions) => 
   })
   const app = await NestFactory.create(AppModule, adapter, { rawBody: true })
   const fastify = app.getHttpAdapter().getInstance()
+  const corsOrigins = [
+    'http://localhost:5173',
+    /^https?:\/\/vluna\.ai(?::\d+)?$/,
+    /^https?:\/\/app\.vluna\.ai(?::\d+)?$/,
+    /^https?:\/\/api\.vluna\.ai(?::\d+)?$/,
+    /^https?:\/\/console\.vluna\.ai(?::\d+)?$/,
+    /^https?:\/\/web\.gate\.tapray\.com(?::\d+)?$/,
+    /^https?:\/\/bg\.gate\.tapray\.com(?::\d+)?$/,
+    ...String(process.env.CORS_ALLOWED_ORIGINS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  ]
 
   try {
     await fastify.register(fastifyCors, {
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      origin: [
-        'http://localhost:5173',
-        /^https?:\/\/bayesi\.com(?::\d+)?$/,
-        /^https?:\/\/api\.bayesi\.com(?::\d+)?$/,
-        /^https?:\/\/web\.gate\.tapray\.com(?::\d+)?$/,
-        /^https?:\/\/bg\.gate\.tapray\.com(?::\d+)?$/,
-      ],
+      origin: corsOrigins,
     })
   } catch (e) {
     console.warn('fastify-cors not registered:', e)
