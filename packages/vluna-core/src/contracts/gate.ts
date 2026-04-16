@@ -541,6 +541,11 @@ export interface components {
         IngestCommit: {
             feature_code: string;
             /**
+             * Format: date-time
+             * @description Business occurrence time for this usage fact. When provided, the server uses it as the rating attribution time instead of the ingest write time.
+             */
+            occurred_at?: string;
+            /**
              * Format: int64
              * @description Feature-level quantity dimension for analytics/limits (may differ from sum(meters[].quantity_minor)).
              */

@@ -1892,14 +1892,16 @@ export class GateService {
     }
 
     const labels = this.normalizeLabels(body?.labels)
+    const occurredAt = this.normalizeOccurredAt((body as { occurred_at?: unknown } | null)?.occurred_at, 'occurred_at')
     const quantityMinor = parseOptionalNonNegativeInt(body?.quantity_minor, 'quantity_minor')
     const rawItems = this.normalizeMeterItems(body?.meters, 'meters')
     if (quantityMinor === undefined && rawItems.length === 0) {
       throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'quantity_minor or meters[] is required' }, 422)
     }
     const requestHash = hashRequest({
-      schema: 'gate.ingest.request.v2',
+      schema: 'gate.ingest.request.v3',
       feature_code: featureCodeInput,
+      occurred_at: occurredAt ? occurredAt.toISOString() : null,
       quantity_minor: quantityMinor ?? null,
       budget_id: budgetId ?? null,
       labels: labels ?? null,
@@ -1924,12 +1926,13 @@ export class GateService {
         throw new HttpException({ code: 'RESOURCE.NOT_FOUND', message: 'feature inactive' }, 422)
       }
 
-      const now = new Date()
+      const systemNow = new Date()
+      const effectiveAt = occurredAt ?? systemNow
       const entitlementDecision = await this.quotaService.ensureEntitlement(trx, {
         realmId: ensuredRealmId,
         billingAccountId: ensuredBillingAccountId,
         featureCode: featureCodeInput,
-        now,
+        now: effectiveAt,
         feature,
       })
       const attributionEntitlement = this.normalizeEntitlementDecision(entitlementDecision)
@@ -1945,9 +1948,11 @@ export class GateService {
           feature_code: featureCodeInput,
           budget_id: budgetId ?? null,
           commit_kind: 'ingest',
+          occurred_at: effectiveAt.toISOString(),
         },
         requestSnapshot: {
           feature_code: featureCodeInput,
+          occurred_at: occurredAt ? occurredAt.toISOString() : null,
           quantity_minor: quantityMinor ?? null,
           budget_id: budgetId ?? null,
           labels,
@@ -1981,26 +1986,26 @@ export class GateService {
             realmId: ensuredRealmId,
             featureCode: featureCodeInput,
             meterCodes: featureMeterCodes,
-	            billingAccountId: ensuredBillingAccountId,
-	            at: now,
-	            onWarning: (warning) => {
-	              hints.push(
-	                warning.kind === 'meter_price_missing'
-	                  ? contractPricingMeterPriceMissingHint({
-	                      meterCode: warning.meterCode,
-	                      contractId: warning.contractId,
-	                      termKey: warning.termKey,
-	                      message: warning.message,
-	                    })
-	                  : contractPricingInvalidTermHint({
-	                      meterCode: warning.meterCode,
-	                      contractId: warning.contractId,
-	                      termKey: warning.termKey,
-	                      message: warning.message,
-	                    }),
-	              )
-	            },
-	          })
+            billingAccountId: ensuredBillingAccountId,
+            at: effectiveAt,
+            onWarning: (warning) => {
+              hints.push(
+                warning.kind === 'meter_price_missing'
+                  ? contractPricingMeterPriceMissingHint({
+                      meterCode: warning.meterCode,
+                      contractId: warning.contractId,
+                      termKey: warning.termKey,
+                      message: warning.message,
+                    })
+                  : contractPricingInvalidTermHint({
+                      meterCode: warning.meterCode,
+                      contractId: warning.contractId,
+                      termKey: warning.termKey,
+                      message: warning.message,
+                    }),
+              )
+            },
+          })
           const pricedCodes = featureMeterCodes.filter((code) => priceMapForSelection.has(code))
           if (pricedCodes.length === 1) {
             selectedMeterCode = pricedCodes[0]
@@ -2076,26 +2081,26 @@ export class GateService {
         realmId: ensuredRealmId,
         featureCode: featureCodeInput,
         meterCodes: uniqueMeterCodes,
-	        billingAccountId: ensuredBillingAccountId,
-	        at: now,
-	        onWarning: (warning) => {
-	          hints.push(
-	            warning.kind === 'meter_price_missing'
-	              ? contractPricingMeterPriceMissingHint({
-	                  meterCode: warning.meterCode,
-	                  contractId: warning.contractId,
-	                  termKey: warning.termKey,
-	                  message: warning.message,
-	                })
-	              : contractPricingInvalidTermHint({
-	                  meterCode: warning.meterCode,
-	                  contractId: warning.contractId,
-	                  termKey: warning.termKey,
-	                  message: warning.message,
-	                }),
-	          )
-	        },
-	      })
+        billingAccountId: ensuredBillingAccountId,
+        at: effectiveAt,
+        onWarning: (warning) => {
+          hints.push(
+            warning.kind === 'meter_price_missing'
+              ? contractPricingMeterPriceMissingHint({
+                  meterCode: warning.meterCode,
+                  contractId: warning.contractId,
+                  termKey: warning.termKey,
+                  message: warning.message,
+                })
+              : contractPricingInvalidTermHint({
+                  meterCode: warning.meterCode,
+                  contractId: warning.contractId,
+                  termKey: warning.termKey,
+                  message: warning.message,
+                }),
+          )
+        },
+      })
 
       const pricingEntries: Array<{
         item: NormalizedCommitItem
@@ -2120,7 +2125,7 @@ export class GateService {
             meterCode: item.meter_code,
             unit: unitForPricing,
             quantityMinor: item.quantityMinor,
-            now,
+            now: effectiveAt,
           })
           pricingEntries.push({ item, computation, priceInfo: null })
           continue
@@ -2203,7 +2208,7 @@ export class GateService {
         totalBlocks,
         totalCost,
         totalCostBlocks,
-        latestEffectiveAt ?? now,
+        latestEffectiveAt ?? effectiveAt,
         pricedResults,
       )
 
@@ -2216,7 +2221,7 @@ export class GateService {
         realmId: ensuredRealmId,
         billingAccountId: ensuredBillingAccountId,
         amountXusd: settlementAmountXusd,
-        now,
+        now: effectiveAt,
       })
 
       const reasonCodes = new Set<string>(['ingest'])
@@ -2257,6 +2262,12 @@ export class GateService {
         feature_code: featureCodeInput,
         application_status: 'applied',
         reason_codes: Array.from(reasonCodes),
+        occurred_at: effectiveAt.toISOString(),
+        occurred_at_source: occurredAt ? 'client' : 'server_default',
+        system_recorded_at: systemNow.toISOString(),
+      }
+      if (occurredAt) {
+        commitMetadata.backfill = occurredAt.getTime() < systemNow.getTime()
       }
       if (budgetId) {
         commitMetadata.budget_id = budgetId
@@ -2285,6 +2296,7 @@ export class GateService {
           cost_snapshot: aggregate.costSnapshot as Record<string, unknown>,
           cost_fingerprint: aggregate.costSnapshot.fingerprint ?? aggregate.costPricingFingerprint,
           metadata: commitMetadata,
+          rated_at: effectiveAt,
         })
         .returning(['rating_id', 'rated_at'])
         .executeTakeFirstOrThrow(() => new Error('failed to insert ingest commit'))
@@ -2346,7 +2358,7 @@ export class GateService {
         summary.line_id = lineId
       }
 
-      await this.updateResidualBuckets(trx, ensuredBillingAccountId, pricedResults, now)
+      await this.updateResidualBuckets(trx, ensuredBillingAccountId, pricedResults, systemNow)
       await this.settlementService.ensurePendingSettlement(trx, {
         realmId: ensuredRealmId,
         featureCode: featureCodeInput,
@@ -2366,6 +2378,10 @@ export class GateService {
         costFingerprint: aggregate.costSnapshot.fingerprint ?? aggregate.costPricingFingerprint,
         engine: 'inline',
         metadata: {
+          occurred_at: effectiveAt.toISOString(),
+          occurred_at_source: occurredAt ? 'client' : 'server_default',
+          system_recorded_at: systemNow.toISOString(),
+          ...(occurredAt ? { backfill: occurredAt.getTime() < systemNow.getTime() } : {}),
           funding: {
             grant_coverage_xusd: fundingPlan.grantCoverageXusd.toString(),
             sources: fundingPlan.allocations.map((allocation) => ({
@@ -2381,7 +2397,7 @@ export class GateService {
           },
         },
         allocations: fundingPlan.allocations,
-        decidedAt: now,
+        decidedAt: systemNow,
       })
 
       if (COMMIT_LEDGER_SYNC_ENABLED && settlementAmountXusd > 0n) {
@@ -2401,7 +2417,7 @@ export class GateService {
             key: `gate.ingest:${commitId}`,
             engine: 'inline',
           },
-          now,
+          now: systemNow,
         })
       }
 
@@ -2611,6 +2627,21 @@ export class GateService {
     })
     if (entries.length === 0) return undefined
     return Object.fromEntries(entries)
+  }
+
+  private normalizeOccurredAt(input: unknown, fieldLabel: string): Date | undefined {
+    if (input === undefined || input === null || input === '') {
+      return undefined
+    }
+    const raw = input instanceof Date ? input.toISOString() : typeof input === 'string' ? input.trim() : ''
+    if (!raw) {
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: `${fieldLabel} must be a valid date-time` }, 422)
+    }
+    const parsed = new Date(raw)
+    if (Number.isNaN(parsed.getTime())) {
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: `${fieldLabel} must be a valid date-time` }, 422)
+    }
+    return parsed
   }
 
   private normalizeSeatId(

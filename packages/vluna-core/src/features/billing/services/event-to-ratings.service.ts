@@ -748,6 +748,7 @@ export class EventToRatingsService {
           const idempotencyKey = `evt:${ctx.eventId}:ct:${contractId ?? '-'}:policy:${selectedPolicyId}:v:${String(selectedPolicyVersion)}:i:${outputIndex}`
           const ingestBody = {
             feature_code: intent.featureCode,
+            occurred_at: eventRow.occurred_at.toISOString(),
             budget_id: intent.budgetId ?? undefined,
             quantity_minor: typeof intent.quantityMinor === 'number' ? String(intent.quantityMinor) : undefined,
             meters: intent.meters.map((meter) => ({
@@ -1140,6 +1141,7 @@ export class EventToRatingsService {
           { realmId: ctx.realmId, billingAccountId: String(row.billing_account_id) },
           {
             feature_code: intent.featureCode,
+            occurred_at: row.window_start.toISOString(),
             budget_id: intent.budgetId ?? undefined,
             quantity_minor: typeof intent.quantityMinor === 'number' ? String(intent.quantityMinor) : undefined,
             meters: intent.meters.map((m) => ({ meter_code: m.meterCode, quantity_minor: String(m.quantityMinor) })),

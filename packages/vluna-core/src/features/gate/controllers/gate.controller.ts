@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UseGuards, UseInterceptors, Inject } from '@nestjs/common'
+import { Body, Controller, Get, Post, Req, UseGuards, UseInterceptors, Inject, HttpCode } from '@nestjs/common'
 import { RealmGuard } from '../../../auth/guards/realm.guard.js'
 import { IdempotencyInterceptor } from '../../../support/idempotency.interceptor.js'
 import { okEnvelope } from '../../../common/envelope.js'
@@ -20,6 +20,7 @@ export class GateController {
   constructor(@Inject(GateService) private readonly gateService: GateService) {}
 
   @Post('authorize')
+  @HttpCode(200)
   @UseInterceptors(IdempotencyInterceptor)
   async authorize(@Req() req: AppRequest, @Body() body: AuthorizeBody): Promise<Authorize200> {
     const { data, hints } = await this.gateService.authorize(req, body)
@@ -29,6 +30,7 @@ export class GateController {
   }
 
   @Post('commits')
+  @HttpCode(200)
   @UseInterceptors(IdempotencyInterceptor)
   async commit(@Req() req: AppRequest, @Body() body: CommitBody): Promise<Commit200> {
     const { data, hints } = await this.gateService.commit(req, body)
@@ -38,6 +40,7 @@ export class GateController {
   }
 
   @Post('ingest')
+  @HttpCode(200)
   @UseInterceptors(IdempotencyInterceptor)
   async ingest(@Req() req: AppRequest, @Body() body: IngestBody): Promise<Ingest200> {
     const { data, hints } = await this.gateService.ingest(req, body)
@@ -47,6 +50,7 @@ export class GateController {
   }
 
   @Post('commits/batch')
+  @HttpCode(200)
   @UseInterceptors(IdempotencyInterceptor)
   async batchCommit(@Req() req: AppRequest, @Body() body: BatchCommitBody): Promise<BatchCommit200> {
     const result = await this.gateService.batchCommit(req, body)
@@ -54,6 +58,7 @@ export class GateController {
   }
 
   @Post('cancel')
+  @HttpCode(200)
   @UseInterceptors(IdempotencyInterceptor)
   async cancel(@Req() req: AppRequest, @Body() body: CancelBody): Promise<Cancel200> {
     const result = await this.gateService.cancel(req, body)
