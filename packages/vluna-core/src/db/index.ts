@@ -58,6 +58,26 @@ export async function withDatabaseConnection<T>(connectionString: string, fn: ()
   }
 }
 
+export async function withIsolatedDatabaseConnection<T>(
+  connectionString: string,
+  fn: (dbHandle: Kysely<Database>) => Promise<T>,
+): Promise<T> {
+  const target = connectionString?.trim()
+  if (!target) {
+    throw new Error('connectionString is required')
+  }
+
+  const tempPool = createPool(target)
+  const tempDb = new Kysely<Database>({ dialect: new PostgresDialect({ pool: tempPool }) })
+
+  try {
+    return await fn(tempDb)
+  } finally {
+    await tempDb.destroy().catch(() => {})
+    await tempPool.end().catch(() => {})
+  }
+}
+
 export async function runSqlFile(filePath: string, opts?: { settings?: Record<string, string | undefined> }) {
   const sqlText = await fs.readFile(filePath, 'utf8')
   if (!sqlText || sqlText.trim().length === 0) return
