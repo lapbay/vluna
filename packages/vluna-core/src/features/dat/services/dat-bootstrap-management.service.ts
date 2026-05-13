@@ -115,17 +115,19 @@ export class DatBootstrapManagementService {
     return result.rows.map((row) => mapBootstrapRow(row, false))
   }
 
-  async listForSubject(subjectId: string) {
+  async listForSubject(subjectId: string, organizationId: string | null) {
     const normalizedSubjectId = String(subjectId || '').trim()
     if (!normalizedSubjectId) return []
+    const normalizedOrganizationId = normalizeNullableString(organizationId)
     const result = await pool.query<BootstrapRow>(
       `
       select *
       from dat_bootstrap_tokens
       where subject_id = $1
+        and organization_id is not distinct from $2
       order by created_at desc
       `,
-      [normalizedSubjectId],
+      [normalizedSubjectId, normalizedOrganizationId],
     )
     return result.rows.map((row) => mapBootstrapRow(row, false))
   }
@@ -156,8 +158,9 @@ export class DatBootstrapManagementService {
     }
   }
 
-  async revealForSubject(subjectId: string, tokenId: string): Promise<{ token_id: string; token: string; token_masked: string }> {
+  async revealForSubject(subjectId: string, organizationId: string | null, tokenId: string): Promise<{ token_id: string; token: string; token_masked: string }> {
     const normalizedSubjectId = String(subjectId || '').trim()
+    const normalizedOrganizationId = normalizeNullableString(organizationId)
     const id = String(tokenId || '').trim()
     if (!normalizedSubjectId) {
       throw new HttpException({ code: 'AUTH.MISSING_SUBJECT', message: 'subject_id is required' }, 401)
@@ -171,9 +174,10 @@ export class DatBootstrapManagementService {
       from dat_bootstrap_tokens
       where token_id = $1
         and subject_id = $2
+        and organization_id is not distinct from $3
       limit 1
       `,
-      [id, normalizedSubjectId],
+      [id, normalizedSubjectId, normalizedOrganizationId],
     )
     const row = result.rows[0]
     if (!row?.token_value) {
@@ -203,8 +207,9 @@ export class DatBootstrapManagementService {
     return Number(result.rowCount || 0) > 0
   }
 
-  async revokeForSubject(subjectId: string, tokenId: string) {
+  async revokeForSubject(subjectId: string, organizationId: string | null, tokenId: string) {
     const normalizedSubjectId = String(subjectId || '').trim()
+    const normalizedOrganizationId = normalizeNullableString(organizationId)
     const id = String(tokenId || '').trim()
     if (!normalizedSubjectId) {
       throw new HttpException({ code: 'AUTH.MISSING_SUBJECT', message: 'subject_id is required' }, 401)
@@ -218,8 +223,9 @@ export class DatBootstrapManagementService {
       set status = 'revoked', updated_at = now()
       where token_id = $1
         and subject_id = $2
+        and organization_id is not distinct from $3
       `,
-      [id, normalizedSubjectId],
+      [id, normalizedSubjectId, normalizedOrganizationId],
     )
     return Number(result.rowCount || 0) > 0
   }
@@ -232,6 +238,11 @@ function sha256Hex(value: string): string {
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.map((entry) => String(entry || '').trim()).filter(Boolean)
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  const normalized = String(value || '').trim()
+  return normalized || null
 }
 
 function toIso(value: Date | string | null): string | null {

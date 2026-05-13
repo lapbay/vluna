@@ -2101,6 +2101,18 @@ CREATE POLICY ga_ins ON grant_assignments
     )
   );
 
+CREATE POLICY ga_realm_admin_ins ON grant_assignments
+  FOR INSERT
+  WITH CHECK (
+    current_setting('app.is_realm_admin', true) = 'true'
+    AND EXISTS (
+      SELECT 1
+      FROM billing_accounts ba
+      WHERE ba.billing_account_id = grant_assignments.billing_account_id
+        AND ba.realm_id = current_setting('app.realm_id', true)
+    )
+  );
+
 CREATE POLICY ga_upd ON grant_assignments
   FOR UPDATE
   USING (

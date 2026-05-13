@@ -294,8 +294,10 @@ export class DatController {
   @UseGuards(RealmGuard, AuthRequiredGuard, ServiceAuthGuard, TokenClaimsGuard, RealmMembershipGuard, DatBootstrapAdminGuard)
   async listBootstrapTokens(@Req() req: AppRequest) {
     const realmId = String(req.ctx?.realmId || '').trim()
-    const items = isCloudEdition()
-      ? await this.bootstrapManagement.listForSubject(resolveCloudBootstrapOwner(req))
+    const cloudEdition = isCloudEdition()
+    const cloudScope = cloudEdition ? resolveCloudBootstrapScope(req) : undefined
+    const items = cloudScope
+      ? await this.bootstrapManagement.listForSubject(cloudScope.subjectId, cloudScope.organizationId)
       : await this.bootstrapManagement.listForRealm(realmId)
     return okEnvelope({ items })
   }
@@ -316,8 +318,10 @@ export class DatController {
   })
   async revealBootstrapToken(@Req() req: AppRequest, @Param('token_id') tokenId: string) {
     const realmId = String(req.ctx?.realmId || '').trim()
-    const data = isCloudEdition()
-      ? await this.bootstrapManagement.revealForSubject(resolveCloudBootstrapOwner(req), tokenId)
+    const cloudEdition = isCloudEdition()
+    const cloudScope = cloudEdition ? resolveCloudBootstrapScope(req) : undefined
+    const data = cloudScope
+      ? await this.bootstrapManagement.revealForSubject(cloudScope.subjectId, cloudScope.organizationId, tokenId)
       : await this.bootstrapManagement.revealForRealm(realmId, tokenId)
     return okEnvelope(data)
   }
@@ -332,8 +336,10 @@ export class DatController {
   })
   async revokeBootstrapToken(@Req() req: AppRequest, @Param('token_id') tokenId: string) {
     const realmId = String(req.ctx?.realmId || '').trim()
-    const revoked = isCloudEdition()
-      ? await this.bootstrapManagement.revokeForSubject(resolveCloudBootstrapOwner(req), tokenId)
+    const cloudEdition = isCloudEdition()
+    const cloudScope = cloudEdition ? resolveCloudBootstrapScope(req) : undefined
+    const revoked = cloudScope
+      ? await this.bootstrapManagement.revokeForSubject(cloudScope.subjectId, cloudScope.organizationId, tokenId)
       : await this.bootstrapManagement.revokeForRealm(realmId, tokenId)
     return okEnvelope({ revoked, token_id: tokenId })
   }
@@ -407,12 +413,22 @@ async function resolveGrantableRealms(req: AppRequest, realmId: string): Promise
   return realmId ? [realmId] : []
 }
 
-function resolveCloudBootstrapOwner(req: AppRequest): string {
-  const subjectId = String(req.ctx?.sub || req.ctx?.claims?.sub || '').trim()
+type CloudBootstrapScope = {
+  subjectId: string
+  organizationId: string | null
+}
+
+function resolveCloudBootstrapScope(req: AppRequest): CloudBootstrapScope {
+  const claims = req.ctx?.claims as Record<string, unknown> | undefined
+  const subjectId = String(req.ctx?.sub || claims?.sub || '').trim()
   if (!subjectId) {
     throw new HttpException({ code: 'AUTH.MISSING_SUBJECT', message: 'subject missing' }, 401)
   }
-  return subjectId
+  const organizationId = String(claims?.organization_id || '').trim()
+  return {
+    subjectId,
+    organizationId: organizationId || null,
+  }
 }
 
 function isCloudEdition(): boolean {
