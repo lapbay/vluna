@@ -3,31 +3,38 @@
 [![CI](https://github.com/tapsvc/vluna/actions/workflows/ci.yml/badge.svg)](https://github.com/tapsvc/vluna/actions/workflows/ci.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](./LICENSE)
 
-## Tagline
+## What is Vluna?
 
-Vluna is billing and runtime usage control for AI agents.
+Vluna is cost tracking, billing and runtime usage control for AI agents.
 
 It helps you ship agentic features that are safe to run, easy to monetize, and easy to explain when something goes wrong.
 
-## About Vluna
+## When you need Vluna
 
-Vluna is for developers building:
+Use Vluna if you are building AI agents that run multi-step tasks and call tools, and any of the following apply:
 
-- AI agents that run multi-step tasks and call tools.
-- Agent products that must track real usage and cost per task run, enforce budgets and entitlements, and keep an auditable trail for pricing and support.
-- Agent products that price by outcome or value, and need a billing engine that turns business events into billable results with clear terms and reporting.
+- You need to know the real cost of each task, broken down by customer, plan, agent, or model. Aggregate monthly bills are not enough.
+- You need to stop or degrade work when a customer runs out of budget, without crashing the agent or double-charging on retry.
+- You change prices or run pricing experiments and do not want every change gated on an engineering deployment.
+- You need to bill by outcomes and business results, not only raw usage.
+- You need reliable retries without double-charging (idempotency).
+- You need an auditable trail for every charge so support, finance, and customers see the same story.
+
+## What Vluna does
 
 Vluna provides:
 
 - Runtime authorization and limits (authorize before work, commit after work).
+- Per-task cost tracking. Every authorize and commit cycle records what the run actually cost. Attribute spend by customer, plan, agent, or model without instrumenting it yourself.
 - Usage-based metering and settlement for agent workloads (tokens, requests, time, bytes).
 - Outcome-based billing when value is measured by results (events to ratings).
 - Plans, entitlements, and wallet mechanics (credits and grants).
+- Flexible pricing changes. Rates, plans, and entitlements live in Vluna config, so you can adjust pricing or roll out a new plan to a cohort without shipping code.
 - An auditable ledger and reporting surfaces for reconciliation.
 
-How money works (XUSD):
+## How money works (XUSD)
 
-AI costs change fast and are hard to explain to customers in raw units. Vluna settles all monetary amounts in a single internal currency called XUSD, stored as an integer to keep accounting precise and audit-friendly.
+AI costs change fast and are hard to explain to customers in raw units. Vluna solves this by settling all monetary amounts in a single internal currency called XUSD. XUSD is stored as an integer to keep accounting precise and audit-friendly.
 
 XUSD is not a customer-facing unit. In your product, you can present any credit system you want, while Vluna keeps the internal settlement and ledger consistent.
 
