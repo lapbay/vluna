@@ -1,6 +1,6 @@
 # Vluna: Open-Source Billing & Usage Gating
 
-[![CI](https://github.com/tapsvc/vluna/actions/workflows/ci.yml/badge.svg)](https://github.com/tapsvc/vluna/actions/workflows/ci.yml)
+[![CI](https://github.com/vlunaai/vluna/actions/workflows/ci.yml/badge.svg)](https://github.com/vlunaai/vluna/actions/workflows/ci.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](./LICENSE)
 
 ## Managed and self-hosted options
@@ -87,7 +87,7 @@ You can start with just `authorize` and `commit`, and the system will work. Late
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/lapbay/vluna.git
+git clone https://github.com/vlunaai/vluna.git
 pnpm install
 ```
 
