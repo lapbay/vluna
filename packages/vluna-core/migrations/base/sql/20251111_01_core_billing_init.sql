@@ -252,10 +252,12 @@ CREATE INDEX IF NOT EXISTS ix_bpa_valid_range ON billing_plan_assignments USING 
 
 CREATE TABLE IF NOT EXISTS subscription_groups (
   subscription_group_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  group_key             text UNIQUE NOT NULL,
+  realm_id              text NOT NULL REFERENCES realms(realm_id) ON DELETE RESTRICT,
+  group_key             text NOT NULL,
   title                 text NOT NULL,
   is_stackable          boolean NOT NULL DEFAULT false,
-  is_exclusive          boolean NOT NULL DEFAULT true
+  is_exclusive          boolean NOT NULL DEFAULT true,
+  CONSTRAINT ux_subscription_groups_realm_key UNIQUE (realm_id, group_key)
 );
 
 -- ---------- 2) Catalog (Products & Prices) -----------------------------

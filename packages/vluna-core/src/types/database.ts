@@ -171,6 +171,7 @@ export interface Database {
   }
   subscription_groups: {
     subscription_group_id: Generated<string>
+    realm_id: string
     group_key: string
     title: string
     is_stackable: boolean

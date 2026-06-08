@@ -198,6 +198,7 @@ type CatalogPriceSpec = {
 }
 
 type CatalogSubscriptionGroupSpec = {
+  realm_id: string
   group_key: string
   title: string
   is_stackable: boolean
@@ -668,6 +669,7 @@ function parseRealmBundle(raw: UnknownRecord, strict: boolean, legacyRealmId?: s
   const catalogSubscriptionGroups: CatalogSubscriptionGroupSpec[] = mapRecords(
     raw.subscription_groups,
     (record) => ({
+      realm_id: realmId,
       group_key: readTrimmedString(record.group_key),
       title: readTrimmedString(record.title ?? record.group_key),
       is_stackable: readBoolean(record.is_stackable, false),
@@ -1194,6 +1196,7 @@ async function loadBillingImportSpec(filePath: string, strict = false): Promise<
   const catalogSubscriptionGroups = [...mapRecords(
     data.subscription_groups,
     (record) => ({
+      realm_id: readTrimmedString(record.realm_id ?? '', ''),
       group_key: readTrimmedString(record.group_key),
       title: readTrimmedString(record.title ?? record.group_key),
       is_stackable: readBoolean(record.is_stackable, false),
@@ -1213,22 +1216,25 @@ async function loadBillingImportSpec(filePath: string, strict = false): Promise<
 
   const catalogProductsDeduped = dedupeByKey(catalogProducts, (p) => p.product_code)
   const catalogPricesDeduped = dedupeByKey(catalogPrices, (p) => p.price_code)
-  // ensure prices carry a group key (default to product_code) and auto-backfill groups list
+  const inferredSubscriptionGroups: CatalogSubscriptionGroupSpec[] = []
   for (const price of catalogPricesDeduped) {
+    if (!price.recurring_interval) continue
     if (!price.subscription_group_key) {
-      price.subscription_group_key = price.product_code
+      throw new Error(`importer: subscription price ${price.price_code} missing subscription_group_key`)
     }
-    if (!catalogSubscriptionGroups.some((g) => g.group_key === price.subscription_group_key)) {
-      catalogSubscriptionGroups.push({
-        group_key: price.subscription_group_key,
-        title: price.subscription_group_key,
-        is_stackable: false,
-        is_exclusive: true,
-      })
-    }
+    inferredSubscriptionGroups.push({
+      realm_id: price.realm_id,
+      group_key: price.subscription_group_key,
+      title: price.subscription_group_key,
+      is_stackable: false,
+      is_exclusive: true,
+    })
   }
 
-  const catalogSubscriptionGroupsDeduped = dedupeByKey(catalogSubscriptionGroups, (g) => g.group_key)
+  const catalogSubscriptionGroupsDeduped = dedupeByKey(
+    [...inferredSubscriptionGroups, ...catalogSubscriptionGroups],
+    (g) => `${g.realm_id}::${g.group_key}`,
+  )
   const feature_familiesDeduped = dedupeByKey(feature_families, (c) => `${c.realm_id}::${c.feature_family_code}`)
 
   if (strict) {
@@ -1244,6 +1250,10 @@ async function loadBillingImportSpec(filePath: string, strict = false): Promise<
       if (!price.realm_id) throw new Error(`importer: catalog_price ${price.price_code} missing realm_id`)
       if (!price.price_code) throw new Error('importer: catalog_price.entry missing price_code')
       if (!price.product_code) throw new Error(`importer: price ${price.price_code} missing product_code`)
+    }
+    for (const group of catalogSubscriptionGroupsDeduped) {
+      if (!group.realm_id) throw new Error(`importer: subscription_group ${group.group_key} missing realm_id`)
+      if (!group.group_key) throw new Error('importer: subscription_group entry missing group_key')
     }
     for (const key of serviceApiKeys) {
       if (!key.key_id) throw new Error('importer: service_api_key entry missing key_id')
@@ -1706,7 +1716,7 @@ async function upsertCatalogPrices(
     if (!productId) {
       throw new Error(`importer: price ${price.price_code} references unknown product ${price.product_code}`)
     }
-    const groupId = price.subscription_group_key ? groupIds.get(price.subscription_group_key) : null
+    const groupId = price.subscription_group_key ? groupIds.get(`${targetRealm}::${price.subscription_group_key}`) : null
     if (price.recurring_interval && !groupId) {
       throw new Error(`importer: subscription price ${price.price_code} missing subscription_group_key mapping`)
     }
@@ -1815,15 +1825,17 @@ async function upsertSubscriptionGroups(
   spec: BillingImportSpec,
   summary: ImportSummary,
 ): Promise<Map<string, string>> {
-  const rows = await trx.selectFrom('subscription_groups').select(['subscription_group_id', 'group_key', 'title', 'is_stackable', 'is_exclusive']).execute()
-  const byKey = new Map(rows.map((r) => [r.group_key, r]))
-  const ids = new Map<string, string>(rows.map((r) => [r.group_key, String(r.subscription_group_id)]))
+  const rows = await trx.selectFrom('subscription_groups').select(['subscription_group_id', 'realm_id', 'group_key', 'title', 'is_stackable', 'is_exclusive']).execute()
+  const byRealmKey = new Map(rows.map((r) => [`${r.realm_id}::${r.group_key}`, r]))
+  const ids = new Map<string, string>(rows.map((r) => [`${r.realm_id}::${r.group_key}`, String(r.subscription_group_id)]))
   for (const group of spec.catalogSubscriptionGroups) {
-    const current = byKey.get(group.group_key)
+    const realmKey = `${group.realm_id}::${group.group_key}`
+    const current = byRealmKey.get(realmKey)
     if (!current) {
       const inserted = await trx
         .insertInto('subscription_groups')
         .values({
+          realm_id: group.realm_id,
           group_key: group.group_key,
           title: group.title,
           is_stackable: group.is_stackable,
@@ -1831,11 +1843,11 @@ async function upsertSubscriptionGroups(
         })
         .returning(['subscription_group_id'])
         .executeTakeFirstOrThrow()
-      ids.set(group.group_key, String(inserted.subscription_group_id))
+      ids.set(realmKey, String(inserted.subscription_group_id))
       bump(summary, 'subscription_groups', 'created')
-      recordCreated(summary, 'subscription_groups', { group_key: group.group_key })
+      recordCreated(summary, 'subscription_groups', { realm_id: group.realm_id, group_key: group.group_key })
     } else {
-      ids.set(group.group_key, String(current.subscription_group_id))
+      ids.set(realmKey, String(current.subscription_group_id))
       const changes: Record<string, { current: unknown; next: unknown }> = {}
       if (current.title !== group.title) changes.title = { current: current.title, next: group.title }
       if (current.is_stackable !== group.is_stackable) {
@@ -1853,10 +1865,11 @@ async function upsertSubscriptionGroups(
             is_stackable: group.is_stackable,
             is_exclusive: group.is_exclusive,
           })
+          .where('realm_id', '=', group.realm_id)
           .where('group_key', '=', group.group_key)
           .executeTakeFirst()
         bump(summary, 'subscription_groups', 'updated')
-        recordUpdated(summary, 'subscription_groups', group.group_key, changes)
+        recordUpdated(summary, 'subscription_groups', realmKey, changes)
       } else {
         bump(summary, 'subscription_groups', 'unchanged')
       }

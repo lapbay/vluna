@@ -633,10 +633,11 @@ export class StripePaymentProvider implements PaymentProvider {
     const localGroups = await db
       .selectFrom('subscription_groups')
       .selectAll()
+      .where('realm_id', 'in', targetRealms)
       .execute() as LocalSubscriptionGroup[]
 
     const groupIdByKey = new Map<string, string>()
-    for (const g of localGroups) groupIdByKey.set(String(g.group_key), String(g.subscription_group_id))
+    for (const g of localGroups) groupIdByKey.set(`${String(g.realm_id)}::${String(g.group_key)}`, String(g.subscription_group_id))
 
     const localProductByProviderId = new Map<string, LocalProduct>()
     const localProductByCode = new Map<string, LocalProduct>()
@@ -659,22 +660,22 @@ export class StripePaymentProvider implements PaymentProvider {
     const localProductIdByStripeProductId = new Map<string, string>()
     const localProductCodeByStripeProductId = new Map<string, string>()
 
-    const ensureGroup = async (groupKey: string): Promise<{ groupKey: string; groupId: string }> => {
+    const ensureGroup = async (realmId: string, groupKey: string): Promise<{ groupKey: string; groupId: string }> => {
       const key = groupKey.trim()
-      const existing = groupIdByKey.get(key)
+      const existing = groupIdByKey.get(`${realmId}::${key}`)
       if (existing) return { groupKey: key, groupId: existing }
       if (dry) {
         const placeholder = `dry:${key}`
-        groupIdByKey.set(key, placeholder)
+        groupIdByKey.set(`${realmId}::${key}`, placeholder)
         return { groupKey: key, groupId: placeholder }
       }
       const inserted = await db
         .insertInto('subscription_groups')
-        .values({ group_key: key, title: key, is_stackable: false, is_exclusive: true })
+        .values({ realm_id: realmId, group_key: key, title: key, is_stackable: false, is_exclusive: true })
         .returning(['subscription_group_id'])
         .executeTakeFirstOrThrow()
       const id = String(inserted.subscription_group_id)
-      groupIdByKey.set(key, id)
+      groupIdByKey.set(`${realmId}::${key}`, id)
       return { groupKey: key, groupId: id }
     }
 
@@ -858,7 +859,7 @@ export class StripePaymentProvider implements PaymentProvider {
           if (!recurringInterval) return null
           const groupKey = remoteGroupKey || String((match as unknown as { subscription_group_key?: string | null })?.subscription_group_key || '') || localProductCode
           if (!groupKey) return null
-          return ensureGroup(groupKey)
+          return ensureGroup(targetRealm, groupKey)
         }
 
         if (!match) {

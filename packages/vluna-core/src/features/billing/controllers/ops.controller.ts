@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpException, Param, Patch, Post, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common'
 import { sql, type ExpressionBuilder, type ReferenceExpression, type SelectQueryBuilder } from 'kysely'
 import type { FastifyReply } from 'fastify'
 import { RealmGuard } from '../../../auth/guards/realm.guard.js'
@@ -279,19 +279,19 @@ export class OpsController {
     const db = req.ctx?.db
     const realmId = req.ctx?.realmId
     if (!realmId) {
-      return errEnvelope('AUTH.INSUFFICIENT_SCOPE', { message: 'realm_id missing' }) as CreateOpsCatalogProduct201
+      throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'realm_id missing' }, 403)
     }
     if (!db) {
-      return errEnvelope('SERVER.CONFIG', { message: 'DB session unavailable' }) as CreateOpsCatalogProduct201
+      throw new HttpException({ code: 'SERVER.CONFIG', message: 'DB session unavailable' }, 500)
     }
 
     const duplicateGrantCode = findDuplicateGrantProgramCode(body.metadata ?? {})
     if (duplicateGrantCode) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: `duplicate grant_program_code in metadata.grants: ${duplicateGrantCode}` }) as CreateOpsCatalogProduct201
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: `duplicate grant_program_code in metadata.grants: ${duplicateGrantCode}` }, 400)
     }
     const presentationConfig = normalizePresentationConfig(body.presentation_config)
     if (presentationConfig === null) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'presentation_config must be an object' }) as CreateOpsCatalogProduct201
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'presentation_config must be an object' }, 400)
     }
 
     const row = await db
@@ -327,7 +327,7 @@ export class OpsController {
       .executeTakeFirst()
 
     if (!row) {
-      return errEnvelope('SERVER.UNEXPECTED', { message: 'catalog product create failed' }) as CreateOpsCatalogProduct201
+      throw new HttpException({ code: 'SERVER.UNEXPECTED', message: 'catalog product create failed' }, 500)
     }
 
     const payload = okEnvelope(mapCatalogProductRow(row)) as CreateOpsCatalogProduct201
@@ -662,25 +662,20 @@ export class OpsController {
     const db = req.ctx?.db
     const realmId = req.ctx?.realmId
     if (!realmId) {
-      return errEnvelope('AUTH.INSUFFICIENT_SCOPE', { message: 'realm_id missing' }) as CreateOpsCatalogPrice201
+      throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'realm_id missing' }, 403)
     }
     if (!db) {
-      return errEnvelope('SERVER.CONFIG', { message: 'DB session unavailable' }) as CreateOpsCatalogPrice201
+      throw new HttpException({ code: 'SERVER.CONFIG', message: 'DB session unavailable' }, 500)
     }
 
     const recurringInterval = body.recurring_interval ?? null
     const recurringCount = body.recurring_count ?? null
+    const subscriptionGroupKey = normalizeSubscriptionGroupKey(body.subscription_group_key)
     if ((recurringInterval && !recurringCount) || (!recurringInterval && recurringCount)) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'recurring_interval and recurring_count must be provided together' }) as CreateOpsCatalogPrice201
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'recurring_interval and recurring_count must be provided together' }, 400)
     }
-
-    const subscriptionGroupId = body.subscription_group_id ?? null
-    const subscriptionGroupKey = body.subscription_group_key ?? null
-    if ((subscriptionGroupId && !subscriptionGroupKey) || (!subscriptionGroupId && subscriptionGroupKey)) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'subscription_group_id and subscription_group_key must be provided together' }) as CreateOpsCatalogPrice201
-    }
-    if (recurringInterval && !subscriptionGroupId) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'subscription_group_id is required for recurring prices' }) as CreateOpsCatalogPrice201
+    if (recurringInterval && !subscriptionGroupKey) {
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: 'subscription_group_key is required for recurring prices' }, 400)
     }
 
     const productRow = await db
@@ -690,13 +685,17 @@ export class OpsController {
       .where(sql`cp.catalog_product_id::text`, '=', String(body.catalog_product_id))
       .executeTakeFirst()
     if (!productRow) {
-      return errEnvelope('RESOURCE.NOT_FOUND', { message: 'catalog product not found' }) as CreateOpsCatalogPrice201
+      throw new HttpException({ code: 'RESOURCE.NOT_FOUND', message: 'catalog product not found' }, 404)
     }
 
     const duplicateGrantCode = findDuplicateGrantProgramCode(body.metadata ?? {})
     if (duplicateGrantCode) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: `duplicate grant_program_code in metadata.grants: ${duplicateGrantCode}` }) as CreateOpsCatalogPrice201
+      throw new HttpException({ code: 'VALIDATION.INVALID_INPUT', message: `duplicate grant_program_code in metadata.grants: ${duplicateGrantCode}` }, 400)
     }
+
+    const subscriptionGroupId = subscriptionGroupKey
+      ? await resolveSubscriptionGroupId(db, realmId, subscriptionGroupKey)
+      : null
 
     const row = await db
       .insertInto('catalog_prices')
@@ -735,7 +734,7 @@ export class OpsController {
       .executeTakeFirst()
 
     if (!row) {
-      return errEnvelope('SERVER.UNEXPECTED', { message: 'catalog price create failed' }) as CreateOpsCatalogPrice201
+      throw new HttpException({ code: 'SERVER.UNEXPECTED', message: 'catalog price create failed' }, 500)
     }
 
     const payload = okEnvelope(mapCatalogPriceRow(row)) as CreateOpsCatalogPrice201
@@ -794,22 +793,17 @@ export class OpsController {
 
     const hasRecurringInterval = Object.prototype.hasOwnProperty.call(body ?? {}, 'recurring_interval')
     const hasRecurringCount = Object.prototype.hasOwnProperty.call(body ?? {}, 'recurring_count')
-    const hasGroupId = Object.prototype.hasOwnProperty.call(body ?? {}, 'subscription_group_id')
     const hasGroupKey = Object.prototype.hasOwnProperty.call(body ?? {}, 'subscription_group_key')
 
     const nextRecurringInterval = hasRecurringInterval ? body.recurring_interval ?? null : existing.recurring_interval
     const nextRecurringCount = hasRecurringCount ? body.recurring_count ?? null : existing.recurring_count
-    const nextGroupId = hasGroupId ? body.subscription_group_id ?? null : existing.subscription_group_id
-    const nextGroupKey = hasGroupKey ? body.subscription_group_key ?? null : existing.subscription_group_key
+    const nextGroupKey = hasGroupKey ? normalizeSubscriptionGroupKey(body.subscription_group_key) : existing.subscription_group_key
 
     if ((nextRecurringInterval && !nextRecurringCount) || (!nextRecurringInterval && nextRecurringCount)) {
       return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'recurring_interval and recurring_count must be provided together' }) as UpdateOpsCatalogPrice200
     }
-    if ((nextGroupId && !nextGroupKey) || (!nextGroupId && nextGroupKey)) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'subscription_group_id and subscription_group_key must be provided together' }) as UpdateOpsCatalogPrice200
-    }
-    if (nextRecurringInterval && !nextGroupId) {
-      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'subscription_group_id is required for recurring prices' }) as UpdateOpsCatalogPrice200
+    if (nextRecurringInterval && !nextGroupKey) {
+      return errEnvelope('VALIDATION.INVALID_INPUT', { message: 'subscription_group_key is required for recurring prices' }) as UpdateOpsCatalogPrice200
     }
 
     if (Object.prototype.hasOwnProperty.call(body ?? {}, 'catalog_product_id')) {
@@ -855,8 +849,14 @@ export class OpsController {
       }
       updates.metadata = body.metadata ?? {}
     }
-    if (hasGroupId) updates.subscription_group_id = body.subscription_group_id ?? null
-    if (hasGroupKey) updates.subscription_group_key = body.subscription_group_key ?? null
+    if (hasRecurringInterval && !body.recurring_interval) {
+      updates.subscription_group_id = null
+      updates.subscription_group_key = null
+    } else if (hasGroupKey || (nextRecurringInterval && nextGroupKey !== existing.subscription_group_key)) {
+      const resolvedGroupId = nextGroupKey ? await resolveSubscriptionGroupId(db, realmId, nextGroupKey) : null
+      updates.subscription_group_id = resolvedGroupId
+      updates.subscription_group_key = nextGroupKey ?? null
+    }
 
     if (Object.keys(updates).length === 0) {
       return okEnvelope(mapCatalogPriceRow(existing)) as UpdateOpsCatalogPrice200
@@ -2039,6 +2039,43 @@ function normalizePresentationConfig(value: unknown): Record<string, unknown> | 
   if (value == null) return {}
   if (typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+function normalizeSubscriptionGroupKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized ? normalized : null
+}
+
+async function resolveSubscriptionGroupId(
+  db: NonNullable<NonNullable<AppRequest['ctx']>['db']>,
+  realmId: string,
+  subscriptionGroupKey: string,
+): Promise<string> {
+  const existing = await db
+    .selectFrom('subscription_groups')
+    .select(['subscription_group_id'])
+    .where('realm_id', '=', realmId)
+    .where('group_key', '=', subscriptionGroupKey)
+    .executeTakeFirst()
+
+  if (existing?.subscription_group_id) {
+    return String(existing.subscription_group_id)
+  }
+
+  const inserted = await db
+    .insertInto('subscription_groups')
+    .values({
+      realm_id: realmId,
+      group_key: subscriptionGroupKey,
+      title: subscriptionGroupKey,
+      is_stackable: false,
+      is_exclusive: true,
+    })
+    .returning(['subscription_group_id'])
+    .executeTakeFirstOrThrow()
+
+  return String(inserted.subscription_group_id)
 }
 
 function mapCatalogPriceRow(row: CatalogPriceRow): OpsComponents['schemas']['OpsCatalogPrice'] {
