@@ -632,6 +632,7 @@ export class BillingPlansManagementService {
     if (!allowCrossAccount && queryBillingAccountId && ctxBillingAccountId && queryBillingAccountId !== ctxBillingAccountId) {
       throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'billing_account_id mismatch' }, 403)
     }
+    await setRlsSession(trx, { realmId, billingAccountId, isRealmAdmin: allowCrossAccount })
 
     const limit = clampLimit(Number(query?.limit ?? 50))
     const cursor = typeof query?.cursor === 'string' ? query.cursor.trim() : ''
@@ -814,9 +815,27 @@ export class BillingPlansManagementService {
     const trx = this.ensureDb(req)
     const realmId = this.ensureRealmId(req)
     const id = parseId(assignmentId, 'assignment_id')
-    const billingAccountId = req?.ctx?.billingAccountId
+    const ctxBillingAccountId = req?.ctx?.billingAccountId
+    const allowCrossAccount = allowCrossAccountAccess(req?.ctx)
+    let billingAccountId = ctxBillingAccountId
     if (!billingAccountId) {
-      throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'billing_account_id required' }, 403)
+      if (!allowCrossAccount) {
+        throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'billing_account_id required' }, 403)
+      }
+
+      await setRlsSession(trx, { realmId, isRealmAdmin: true })
+      const owner = await trx
+        .selectFrom('billing_plan_assignments as bpa')
+        .innerJoin('billing_plans as bp', 'bp.plan_id', 'bpa.plan_id')
+        .select(['bpa.billing_account_id as billing_account_id'])
+        .where('bp.realm_id', '=', realmId)
+        .where('bpa.assignment_id', '=', id)
+        .executeTakeFirst()
+
+      if (!owner) {
+        throw new HttpException({ code: 'NOT_FOUND', message: 'billing plan assignment not found' }, 404)
+      }
+      billingAccountId = String(owner.billing_account_id)
     }
 
     await setRlsSession(trx, { realmId, billingAccountId, isRealmAdmin: true })

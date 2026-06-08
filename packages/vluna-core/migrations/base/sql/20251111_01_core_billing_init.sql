@@ -210,6 +210,36 @@ CREATE INDEX IF NOT EXISTS idx_billing_details_legal_name
 CREATE INDEX IF NOT EXISTS idx_billing_details_country_code
   ON billing_account_billing_details ((default_address->>'country_code'));
 
+DO $$
+BEGIN
+  BEGIN EXECUTE 'ALTER TABLE billing_account_billing_details ENABLE ROW LEVEL SECURITY'; EXCEPTION WHEN others THEN NULL; END;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = current_schema() AND tablename='billing_account_billing_details' AND policyname='bbd_rw') THEN
+    CREATE POLICY bbd_rw ON billing_account_billing_details FOR ALL USING (
+      EXISTS (
+        SELECT 1
+        FROM billing_accounts ba
+        WHERE ba.billing_account_id = billing_account_billing_details.billing_account_id
+          AND ba.realm_id = current_setting('app.realm_id', true)
+          AND (
+            current_setting('app.is_realm_admin', true) = 'true'
+            OR ba.billing_account_id = get_current_billing_account_id()
+          )
+      )
+    ) WITH CHECK (
+      EXISTS (
+        SELECT 1
+        FROM billing_accounts ba
+        WHERE ba.billing_account_id = billing_account_billing_details.billing_account_id
+          AND ba.realm_id = current_setting('app.realm_id', true)
+          AND (
+            current_setting('app.is_realm_admin', true) = 'true'
+            OR ba.billing_account_id = get_current_billing_account_id()
+          )
+      )
+    );
+  END IF;
+END$$;
+
 -- ---------- billing_plans ----------
 CREATE TABLE IF NOT EXISTS billing_plans (
   plan_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -935,6 +965,29 @@ BEGIN
       billing_plan_assignments.billing_account_id = get_current_billing_account_id()
     );
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = current_schema() AND tablename='billing_plan_assignments' AND policyname='bpa_realm_admin_rw') THEN
+    CREATE POLICY bpa_realm_admin_rw ON billing_plan_assignments FOR ALL USING (
+      current_setting('app.is_realm_admin', true) = 'true'
+      AND EXISTS (
+        SELECT 1
+        FROM billing_accounts ba
+        JOIN billing_plans bp ON bp.plan_id = billing_plan_assignments.plan_id
+        WHERE ba.billing_account_id = billing_plan_assignments.billing_account_id
+          AND ba.realm_id = current_setting('app.realm_id', true)
+          AND bp.realm_id = current_setting('app.realm_id', true)
+      )
+    ) WITH CHECK (
+      current_setting('app.is_realm_admin', true) = 'true'
+      AND EXISTS (
+        SELECT 1
+        FROM billing_accounts ba
+        JOIN billing_plans bp ON bp.plan_id = billing_plan_assignments.plan_id
+        WHERE ba.billing_account_id = billing_plan_assignments.billing_account_id
+          AND ba.realm_id = current_setting('app.realm_id', true)
+          AND bp.realm_id = current_setting('app.realm_id', true)
+      )
+    );
+  END IF;
 END$$;
 
 -- RLS for billing_plan_entitlements: realm-scoped via billing_plans
@@ -1254,6 +1307,8 @@ BEGIN
       ON budgets
       FOR SELECT
       USING (
+        current_setting('app.is_realm_admin', true) = 'true'
+        AND
         EXISTS (
           SELECT 1
           FROM billing_accounts ba
