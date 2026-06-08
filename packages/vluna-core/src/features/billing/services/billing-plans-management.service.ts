@@ -817,12 +817,8 @@ export class BillingPlansManagementService {
     const id = parseId(assignmentId, 'assignment_id')
     const ctxBillingAccountId = req?.ctx?.billingAccountId
     const allowCrossAccount = allowCrossAccountAccess(req?.ctx)
-    let billingAccountId = ctxBillingAccountId
-    if (!billingAccountId) {
-      if (!allowCrossAccount) {
-        throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'billing_account_id required' }, 403)
-      }
-
+    let billingAccountId: string | undefined
+    if (allowCrossAccount) {
       await setRlsSession(trx, { realmId, isRealmAdmin: true })
       const owner = await trx
         .selectFrom('billing_plan_assignments as bpa')
@@ -836,6 +832,11 @@ export class BillingPlansManagementService {
         throw new HttpException({ code: 'NOT_FOUND', message: 'billing plan assignment not found' }, 404)
       }
       billingAccountId = String(owner.billing_account_id)
+    } else {
+      billingAccountId = ctxBillingAccountId
+      if (!billingAccountId) {
+        throw new HttpException({ code: 'AUTH.INSUFFICIENT_SCOPE', message: 'billing_account_id required' }, 403)
+      }
     }
 
     await setRlsSession(trx, { realmId, billingAccountId, isRealmAdmin: true })
