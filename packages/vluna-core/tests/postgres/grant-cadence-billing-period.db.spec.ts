@@ -197,4 +197,71 @@ describe('grant cadence=billing_period issuance (db)', { tags: ['db'] }, () => {
       })
     }).rejects.toThrow(/cadence=billing_period requires window_kind=period/)
   })
+
+  it('treats repeated open-ended once issuance as idempotent', async () => {
+    if (skipped) return
+    if (!seedClient) return
+
+    const now = new Date('2025-01-15T12:00:00Z')
+    await seedBaseState(now)
+
+    await seedClient.query(
+      `
+      update grant_programs
+      set cadence = 'once', window_kind = 'fixed', issue_anchor = 'binding_start', amount_xusd = $1, on_ledger = false
+      where realm_id = $2 and program_code = $3
+      `,
+      [250n, realmId, 'gp-period'],
+    )
+
+    await withDatabaseConnection(process.env.DATABASE_URI!, async () => {
+      await db().transaction().execute(async (trx) => {
+        const program = await trx
+          .selectFrom('grant_programs')
+          .selectAll()
+          .where('realm_id', '=', realmId)
+          .where('program_code', '=', 'gp-period')
+          .executeTakeFirstOrThrow()
+
+        const assignment = await trx
+          .selectFrom('grant_assignments')
+          .selectAll()
+          .where('billing_account_id', '=', billingAccountId)
+          .where('program_id', '=', program.program_id)
+          .executeTakeFirstOrThrow()
+
+        await issueGrantForAssignment(trx, {
+          realmId,
+          billingAccountId,
+          program,
+          assignment,
+          quantity: 1,
+          now,
+          isRealmAdmin: true,
+        })
+
+        await issueGrantForAssignment(trx, {
+          realmId,
+          billingAccountId,
+          program,
+          assignment,
+          quantity: 1,
+          now,
+          isRealmAdmin: true,
+        })
+      })
+    })
+
+    const grants = await seedClient.query<{ cnt: string; amount_xusd: string; period_end: Date | null }>(
+      `
+      select count(*)::text as cnt, min(amount_xusd)::text as amount_xusd, min(period_end) as period_end
+      from ledger_grants
+      where billing_account_id = $1
+      `,
+      [billingAccountId],
+    )
+    expect(Number(grants.rows[0].cnt)).toBe(1)
+    expect(grants.rows[0].amount_xusd).toBe('250')
+    expect(grants.rows[0].period_end).toBeNull()
+  })
 })

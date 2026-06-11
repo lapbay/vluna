@@ -155,15 +155,21 @@ export class GrantBindingSweepTask implements PeriodicTaskDefinition {
       if (bindings.length === 0) continue
 
       for (const binding of bindings) {
-        const result = await this.processBinding(dbHandle, {
-          account,
-          binding,
-          now,
-          priceCache,
-          subscriptionCache,
-        })
-        processedBindings += 1
-        issuedGrants += result.issued
+        try {
+          const result = await this.processBinding(dbHandle, {
+            account,
+            binding,
+            now,
+            priceCache,
+            subscriptionCache,
+          })
+          processedBindings += 1
+          issuedGrants += result.issued
+        } catch (err) {
+          this.logger.error(
+            `Grant sweep skipped binding ${binding.assignment_id} in realm ${realmId}: ${(err as Error)?.message ?? err}`,
+          )
+        }
       }
     }
 

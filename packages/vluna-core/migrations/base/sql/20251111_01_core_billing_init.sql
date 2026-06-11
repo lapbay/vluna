@@ -1583,8 +1583,9 @@ CREATE TABLE IF NOT EXISTS ledger_grants (
   created_at             timestamptz NOT NULL DEFAULT now(),
   updated_at             timestamptz NOT NULL DEFAULT now(),
 
-  -- Idempotent upsert key: one binding + one period + one seq → one row
-  CONSTRAINT ux_ledger_grants_assignment_period_seq UNIQUE (assignment_id, period_start, period_end, alloc_seq)
+  -- Idempotent upsert key: one binding + one period + one seq → one row.
+  -- Use NULLS NOT DISTINCT so open-ended one-time grants (period_end IS NULL) still collide.
+  CONSTRAINT ux_ledger_grants_assignment_period_seq UNIQUE NULLS NOT DISTINCT (assignment_id, period_start, period_end, alloc_seq)
 );
 
 -- Partial uniqueness for non-null idempotency keys

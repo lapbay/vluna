@@ -66,6 +66,14 @@ export type GrantIssuanceResult = {
   ledgerEntryId: string | null
 }
 
+type ExistingGrantRow = {
+  grant_id: string
+  ledger_id: string | null
+  source_entry_id: string | null
+  on_ledger: boolean
+  amount_xusd: string | number | bigint
+}
+
 const FALLBACK_PROGRAM_CODE = 'fallback-cash'
 const FALLBACK_PROGRAM_NAME = 'Fallback Cash Anchor'
 
@@ -279,6 +287,10 @@ export async function issueGrantForAssignment(
   const metadataSafe = jsonSafe(metadata, 'ledger_grants.metadata')
 
   const idempotencyKey = params.idempotencyKey ?? buildGrantIdempotencyKey(String(assignment.assignment_id), allocSeq, period)
+  const existingGrant = idempotencyKey
+    ? await loadGrantByIdempotencyKey(trx, idempotencyKey)
+    : await loadGrantByAssignmentPeriod(trx, String(assignment.assignment_id), allocSeq, period)
+
   const insert: Insertable<Database['ledger_grants']> = {
     billing_account_id: params.billingAccountId,
     ledger_id: null,
@@ -303,29 +315,30 @@ export async function issueGrantForAssignment(
     metadata: metadataSafe,
   }
 
-  const grantRow = await trx
-    .insertInto('ledger_grants')
-    .values(insert)
-    .onConflict((oc) =>
-      oc
-        .columns(['assignment_id', 'period_start', 'period_end', 'alloc_seq'])
-        .doUpdateSet({
-          amount_xusd: sql`excluded.amount_xusd`,
-          window_start: sql`excluded.window_start`,
-          window_end: sql`excluded.window_end`,
-          priority: sql`excluded.priority`,
-          on_ledger: sql`excluded.on_ledger`,
-          source_kind: sql`excluded.source_kind`,
-          source_ref: sql`excluded.source_ref`,
-          idempotency_key: sql`excluded.idempotency_key`,
-          kind: sql`excluded.kind`,
-          metadata: sql`excluded.metadata`,
-          program_id: sql`excluded.program_id`,
-          updated_at: sql`now()`,
-        }),
-    )
-    .returning(['grant_id', 'ledger_id', 'source_entry_id', 'on_ledger'])
-    .executeTakeFirst()
+  const grantRow = existingGrant
+    ?? await trx
+      .insertInto('ledger_grants')
+      .values(insert)
+      .onConflict((oc) =>
+        oc
+          .columns(['assignment_id', 'period_start', 'period_end', 'alloc_seq'])
+          .doUpdateSet({
+            amount_xusd: sql`excluded.amount_xusd`,
+            window_start: sql`excluded.window_start`,
+            window_end: sql`excluded.window_end`,
+            priority: sql`excluded.priority`,
+            on_ledger: sql`excluded.on_ledger`,
+            source_kind: sql`excluded.source_kind`,
+            source_ref: sql`excluded.source_ref`,
+            idempotency_key: sql`excluded.idempotency_key`,
+            kind: sql`excluded.kind`,
+            metadata: sql`excluded.metadata`,
+            program_id: sql`excluded.program_id`,
+            updated_at: sql`now()`,
+          }),
+      )
+      .returning(['grant_id', 'ledger_id', 'source_entry_id', 'on_ledger', 'amount_xusd'])
+      .executeTakeFirst()
 
   if (!grantRow) {
     throw new Error('failed to upsert ledger_grant')
@@ -333,14 +346,15 @@ export async function issueGrantForAssignment(
 
   let ledgerId: string | null = grantRow.ledger_id ?? null
   let ledgerEntryId: string | null = grantRow.source_entry_id ?? null
+  const amountIssued = parseBigInt(grantRow.amount_xusd) ?? amount
 
-  if (onLedger && amount > 0n) {
+  if (onLedger && amountIssued > 0n) {
     const ledgerKey = params.ledgerIdempotencyKey
       ?? buildLedgerEntryKey(String(assignment.assignment_id), period, params.sourceRef)
     const ledgerResult = await appendLedgerEntry(trx, {
       billingAccountId: params.billingAccountId,
       currencyCode: WALLET_LEDGER_CURRENCY,
-      amountXusd: amount,
+      amountXusd: amountIssued,
       reason: 'purchase',
       idempotencyKey: ledgerKey,
       sourceRef: params.sourceRef ?? idempotencyKey ?? ledgerKey,
@@ -363,7 +377,7 @@ export async function issueGrantForAssignment(
 
   return {
     grantId: String(grantRow.grant_id),
-    amountXusd: amount,
+    amountXusd: amountIssued,
     onLedger,
     ledgerId,
     ledgerEntryId,
@@ -672,6 +686,56 @@ function startOfUtcYear(date: Date): Date {
 
 function addYears(date: Date, years: number): Date {
   return new Date(Date.UTC(date.getUTCFullYear() + years, date.getUTCMonth(), date.getUTCDate(), date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds(), date.getUTCMilliseconds()))
+}
+
+async function loadGrantByIdempotencyKey(
+  trx: Transaction<Database>,
+  idempotencyKey: string,
+): Promise<ExistingGrantRow | null> {
+  const row = await trx
+    .selectFrom('ledger_grants')
+    .select(['grant_id', 'ledger_id', 'source_entry_id', 'on_ledger', 'amount_xusd'])
+    .where('idempotency_key', '=', idempotencyKey)
+    .executeTakeFirst()
+
+  return row ? {
+    grant_id: String(row.grant_id),
+    ledger_id: row.ledger_id ?? null,
+    source_entry_id: row.source_entry_id ?? null,
+    on_ledger: Boolean(row.on_ledger),
+    amount_xusd: row.amount_xusd,
+  } : null
+}
+
+async function loadGrantByAssignmentPeriod(
+  trx: Transaction<Database>,
+  assignmentId: string,
+  allocSeq: number,
+  period: { start: Date | null; end: Date | null },
+): Promise<ExistingGrantRow | null> {
+  let query = trx
+    .selectFrom('ledger_grants')
+    .select(['grant_id', 'ledger_id', 'source_entry_id', 'on_ledger', 'amount_xusd'])
+    .where('assignment_id', '=', assignmentId)
+    .where('alloc_seq', '=', allocSeq)
+
+  query = period.start
+    ? query.where('period_start', '=', period.start)
+    : query.where('period_start', 'is', null)
+
+  query = period.end
+    ? query.where('period_end', '=', period.end)
+    : query.where('period_end', 'is', null)
+
+  const row = await query.executeTakeFirst()
+
+  return row ? {
+    grant_id: String(row.grant_id),
+    ledger_id: row.ledger_id ?? null,
+    source_entry_id: row.source_entry_id ?? null,
+    on_ledger: Boolean(row.on_ledger),
+    amount_xusd: row.amount_xusd,
+  } : null
 }
 
 function buildGrantIdempotencyKey(
