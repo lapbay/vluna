@@ -61,7 +61,7 @@ export class DatBootstrapManagementService {
       throw new HttpException({ code: 'AUTH.UNAUTHORIZED_REALM', message: 'allowed_realms must include current realm' }, 403)
     }
     const scopes = Array.from(new Set(params.granted_scopes))
-    if (!scopes.length) scopes.push('mcp:read')
+    if (!scopes.length) scopes.push('mcp:read', 'mcp:write')
     const tokenId = `dbt_${randomUUID().replace(/-/g, '')}`
     const secret = randomBytes(24).toString('base64url')
     const tokenValue = `datb_${tokenId}_${secret}`

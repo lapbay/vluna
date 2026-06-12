@@ -347,13 +347,16 @@ export class DatController {
 
 function normalizeScopes(input?: string[]): DatScope[] {
   if (!Array.isArray(input) || input.length === 0) {
-    return ['mcp:read']
+    return ['mcp:read', 'mcp:write']
   }
   const normalized = new Set<DatScope>()
   for (const value of input) {
     if (value === 'mcp:read' || value === 'mcp:write') normalized.add(value)
   }
-  if (!normalized.size) normalized.add('mcp:read')
+  if (!normalized.size) {
+    normalized.add('mcp:read')
+    normalized.add('mcp:write')
+  }
   return Array.from(normalized)
 }
 

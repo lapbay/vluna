@@ -7,7 +7,7 @@ import type {
   IssueDatSessionParams,
 } from '../../../auth/policies/dat-authorization.policy.js'
 
-const DEFAULT_SCOPES: DatScope[] = ['mcp:read']
+const DEFAULT_SCOPES: DatScope[] = ['mcp:read', 'mcp:write']
 
 @Injectable()
 export class OssDatAuthorizationPolicy implements DatAuthorizationPolicy {
